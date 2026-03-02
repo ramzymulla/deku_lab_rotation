@@ -24,16 +24,16 @@ ISI_BASE = 2.0
 ISI_JITTER = 0.5      
 
 shankOrder = [25,1,8,32,26,2,7,31,27,3,6,30,28,4,5,29]
-CHANNELS = [f"a-{site:03d}" for site in shankOrder] # TCP server requires lowercase prefix
+CHANNELS = [f"a-{site-1:03d}" for site in shankOrder] # TCP server requires lowercase prefix
 
-CHANNEL_MAP = {ind+1:chan for ind,chan in enumerate(CHANNELS)}
+CHANNEL_MAP = {ind:chan for ind,chan in enumerate(CHANNELS)}
 
 WAVEFORMS = [
     {
         'name': 'Symmetric Biphasic Cathodic-First',
         'polarity': 'NegativeFirst',
         # [FirstPhaseDuration, InterphaseDelay, SecondPhaseDuration] in microseconds
-        'pulseWidths': [[200, 33.3, 200]],             
+        'pulseWidths': [[200, 40, 200]],             
         'amplitudes': [0, 1, 2, 5, 10, 20, 40],         
         'frequencies': [320],                           
         'pulseDurations': [650]                         
@@ -99,28 +99,43 @@ def main():
                     num_pulses = int(freq * (train_dur_ms / 1000.0))
                     period_us = 1000000 / freq if freq > 0 else 0
                     pulse_or_train = "PulseTrain" if num_pulses > 1 else "SinglePulse"
-                    
-                    send_intan_command(s, f"set {channel}.NumberOfStimPulses {num_pulses}")
-                    send_intan_command(s, f"set {channel}.PulseTrainPeriodMicroseconds {period_us}")
-                    send_intan_command(s, f"set {channel}.PulseOrTrain {pulse_or_train}")
-
                     # 2. Phase Parameters
                     p1_dur, ip_delay, p2_dur = pw_set
                     shape = "BiphasicWithInterphaseDelay" if ip_delay > 0 else "Biphasic"
 
-                    send_intan_command(s, f"set {channel}.Shape {shape}")
-                    send_intan_command(s, f"set {channel}.Polarity {waveform['polarity']}")
+                    commands = \
+f"""set {channel}.NumberOfStimPulses {num_pulses}
+set {channel}.PulseTrainPeriodMicroseconds {period_us}
+set {channel}.PulseOrTrain {pulse_or_train}
+set {channel}.Shape {shape}
+set {channel}.Polarity {waveform['polarity']}
+set {channel}.FirstPhaseAmplitudeMicroAmps {base_amp}
+set {channel}.FirstPhaseDurationMicroseconds {p1_dur}
+set {channel}.InterphaseDelayMicroseconds {ip_delay}
+set {channel}.SecondPhaseAmplitudeMicroAmps {base_amp}
+set {channel}.SecondPhaseDurationMicroseconds {p2_dur}
+set {channel}.StimEnabled True"""
                     
-                    send_intan_command(s, f"set {channel}.FirstPhaseAmplitudeMicroAmps {base_amp}")
-                    send_intan_command(s, f"set {channel}.FirstPhaseDurationMicroseconds {p1_dur}")
-                    
-                    send_intan_command(s, f"set {channel}.InterphaseDelayMicroseconds {ip_delay}")
-                    
-                    send_intan_command(s, f"set {channel}.SecondPhaseAmplitudeMicroAmps {base_amp}")
-                    send_intan_command(s, f"set {channel}.SecondPhaseDurationMicroseconds {p2_dur}")
+                    # send_intan_command(s, f"set {channel}.NumberOfStimPulses {num_pulses}")
+                    # send_intan_command(s, f"set {channel}.PulseTrainPeriodMicroseconds {period_us}")
+                    # send_intan_command(s, f"set {channel}.PulseOrTrain {pulse_or_train}")
 
-                    # 3. Trigger Sequence
-                    send_intan_command(s, f"set {channel}.StimEnabled True")
+                    
+
+                    # send_intan_command(s, f"set {channel}.Shape {shape}")
+                    # send_intan_command(s, f"set {channel}.Polarity {waveform['polarity']}")
+                    
+                    # send_intan_command(s, f"set {channel}.FirstPhaseAmplitudeMicroAmps {base_amp}")
+                    # send_intan_command(s, f"set {channel}.FirstPhaseDurationMicroseconds {p1_dur}")
+                    
+                    # send_intan_command(s, f"set {channel}.InterphaseDelayMicroseconds {ip_delay}")
+                    
+                    # send_intan_command(s, f"set {channel}.SecondPhaseAmplitudeMicroAmps {base_amp}")
+                    # send_intan_command(s, f"set {channel}.SecondPhaseDurationMicroseconds {p2_dur}")
+
+                    # # 3. Trigger Sequence
+                    # send_intan_command(s, f"set {channel}.StimEnabled True")
+                    send_intan_command(s,commands)
 
                     if TRIGGER_METHOD == 'TCP':
                         # RHX may not support direct software triggering via execute

@@ -11,7 +11,7 @@ RHX_PORT = 5000
 TRIGGER_METHOD = 'TCP'  # 'TCP' or 'TTL'
 
 shankOrder = [25,1,8,32,26,2,7,31,27,3,6,30,28,4,5,29]
-CHANNELS = [f"A-{site:03d}" for site in shankOrder]
+CHANNELS = [f"A-{site-1:03d}" for site in shankOrder]
 
 # Map logical order (1=Tip) to Intan hardware channels
 # Adjust this according to your specific probe's wiring diagram
