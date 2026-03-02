@@ -114,6 +114,8 @@ def main():
                         p1_dur, ip_delay, p2_dur = pw_set
                         shape = "BiphasicWithInterphaseDelay" if ip_delay > 0 else "Biphasic"
 
+                        s.sendall(b"set runmode stop")
+
                         # 1. Build the batch command list
                         cmd_batch = [
                             f"set {channel}.NumberOfStimPulses {num_pulses}",
@@ -132,11 +134,13 @@ def main():
 
                         # 2. Send all parameters at once
                         send_intan_batch(s, cmd_batch)
+                        send_intan_batch(s, f"execute UploadStimParameters {channel}")
 
+                        s.sendall(b'set runmode run')
+                        time.sleep(0.5)
                         # 3. Software Trigger via Keyboard Emulation
-                        # NOTE: Intan RHX GUI must be the active window on your screen for this to register
-                        pyautogui.press('f1')
-                        
+                        s.sendall(b'execute ManualTriggerPulse f1')
+
                         # 4. Log the exact execution time and parameters
                         exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                         csv_writer.writerow([
@@ -145,10 +149,14 @@ def main():
                         ])
                         log_file.flush() 
                         
+                        time.sleep(2)
+
                         # 5. Disarm Channel
-                        send_intan_batch(s, [f"set {channel}.StimEnabled False"])
+                        s.sendall(b"set runmode stop")
+                        send_intan_batch(s, f"execute ClearAllStimParameters")
                         
-                        time.sleep(current_isi)
+                        
+                        
                         
                     print("\nProtocol complete.")
 

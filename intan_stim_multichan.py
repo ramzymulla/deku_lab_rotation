@@ -56,7 +56,7 @@ def send_intan_batch(sock, cmd_list):
     sock.setblocking(False)
     
     for cmd in cmd_list:
-        sock.sendall(f"{cmd}\n".encode('utf-8'))
+        sock.sendall(f"{cmd};\n".encode('utf-8'))
         time.sleep(0.002) # 2ms delay gives Intan's parser time to process the buffer
         
         try:
