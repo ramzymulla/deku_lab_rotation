@@ -28,7 +28,7 @@ WAVEFORMS = [
     {
         'name': 'Symmetric Biphasic Cathodic-First',
         'polarity': 'NegativeFirst',
-        'pulseWidths': [[200, 33.3, 200]],             
+        'pulseWidths': [[200, 40, 200]],             
         'amplitudes': [0, 1, 2, 5, 10, 20, 40],         
         'frequencies': [320],                           
         'pulseDurations': [650]                         
