@@ -52,7 +52,7 @@ WAVEFORMS = [
 # ==========================================
 def send_intan_batch(sock, cmd_list):
     """Sends a list of commands as a single batched string."""
-    batch_string = "\n".join(cmd_list) + "\n"
+    batch_string = ";\n\n".join(cmd_list) + "\n"
     sock.sendall(batch_string.encode('utf-8'))
 
     try:
