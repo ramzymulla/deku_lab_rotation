@@ -2,22 +2,20 @@ import socket
 import time
 import random
 import itertools
+import sys
+import pyautogui 
+import csv
+from datetime import datetime
+
+DEBUG = False
+if len(sys.argv) > 1 and sys.argv[1] == 'debug':
+    DEBUG = True
 
 # ==========================================
 # 1. Hardware & Trigger Configuration
 # ==========================================
 RHX_IP = '127.0.0.1'
 RHX_PORT = 5000
-TRIGGER_METHOD = 'TCP'  # 'TCP' or 'TTL'
-
-shankOrder = [25,1,8,32,26,2,7,31,27,3,6,30,28,4,5,29]
-CHANNELS = [f"A-{site-1:03d}" for site in shankOrder]
-
-# Map logical order (1=Tip) to Intan hardware channels
-# Adjust this according to your specific probe's wiring diagram
-CHANNEL_MAP = {ind+1:chan for ind,chan in enumerate(CHANNELS)}
-
-
 
 # ==========================================
 # 2. Timing & Parameter Space
@@ -25,115 +23,139 @@ CHANNEL_MAP = {ind+1:chan for ind,chan in enumerate(CHANNELS)}
 ISI_BASE = 2.0        
 ISI_JITTER = 0.5      
 
-# Define groups of logical channels to activate simultaneously
+shankOrder = [25,1,8,32,26,2,7,31,27,3,6,30,28,4,5,29]
+CHANNELS = [f"a-{site-1:03d}" for site in shankOrder] 
+
+# Define groups of channels to activate simultaneously
 SPATIAL_GROUPS = [
-    [1],                # Tip only
-    [1, 2],             # Tip + next
-    [1, 2, 3, 4],       # Spread from tip
-    [16],               # Base only
-    [16, 15],           # Base + next
-    [16, 15, 14, 13]    # Spread from base
+    [CHANNELS[0]],                   # Tip only
+    [CHANNELS[0], CHANNELS[1]],      # Tip + next
+    CHANNELS[:4],                    # Spread from tip (first 4)
+    [CHANNELS[-1]],                  # Base only
+    [CHANNELS[-1], CHANNELS[-2]],    # Base + next
+    CHANNELS[-4:]                    # Spread from base (last 4)
 ]
 
 WAVEFORMS = [
     {
         'name': 'Symmetric Biphasic Cathodic-First',
-        'phases': [
-            {'name': 'FirstPhase', 'polarity': 'Negative', 'amp_mult': 1.0},
-            {'name': 'SecondPhase', 'polarity': 'Positive', 'amp_mult': 0.0},
-            {'name': 'ThirdPhase', 'polarity': 'Positive', 'amp_mult': 1.0},
-            {'name': 'FourthPhase', 'polarity': 'Positive', 'amp_mult': 0.0}   
-        ],
-        'pulseWidths': [[200, 40, 200, 0]],         
-        'amplitudes': [0, 1, 5, 10, 20, 40], 
-        'frequencies': [320],                       
-        'pulseDurations': [650]                     
+        'polarity': 'NegativeFirst',
+        'pulseWidths': [[200, 40, 200]],             
+        'amplitudes': [0, 1, 2, 5, 10, 20, 40],         
+        'frequencies': [320],                           
+        'pulseDurations': [650]                         
     }
 ]
 
 # ==========================================
 # 3. Execution Functions
 # ==========================================
-def send_intan_command(sock, command):
-    sock.sendall(f"{command};\n".encode('utf-8'))
+def send_intan_batch(sock, cmd_list):
+    """Sends a list of commands as a single batched string."""
+    batch_string = "\n".join(cmd_list) + "\n"
+    sock.sendall(batch_string.encode('utf-8'))
+
     try:
-        return sock.recv(1024).decode('utf-8').strip()
+        response = sock.recv(8192).decode('utf-8').strip()
+        if DEBUG:
+            print(f"Batch Sent. Response:\n{response}")
+        return response
     except socket.timeout:
         return "Timeout"
 
-def fire_hardware_ttl():
-    # Insert hardware trigger logic here
-    print("      [Hardware TTL Fired]")
-
-def main():
+def get_stim_combs(groups, wfs):
     stim_combinations = []
-    
-    for wf in WAVEFORMS:
+    for wf in wfs:
         wf_combos = list(itertools.product(
-            SPATIAL_GROUPS, 
-            [wf], 
-            wf['pulseWidths'], 
-            wf['amplitudes'], 
-            wf['frequencies'], 
-            wf['pulseDurations']
+            groups, [wf], wf['pulseWidths'], wf['amplitudes'], wf['frequencies'], wf['pulseDurations']
         ))
         stim_combinations.extend(wf_combos)
-        
     random.shuffle(stim_combinations)
-    print(f"Generated {len(stim_combinations)} randomized stimulation trials.")
+    return stim_combinations
 
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(2.0)
-            s.connect((RHX_IP, RHX_PORT))
-            print("Connected to Intan RHX.\n")
+def main():
+    stim_record = []
+    nTrialsEachComb = 20
 
-            for i, (group, waveform, pw_set, base_amp, freq, train_dur_ms) in enumerate(stim_combinations, 1):
-                current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
-                
-                print(f"[{i}/{len(stim_combinations)}] Logical Chs: {group} | {waveform['name']} | {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
+    # Initialize CSV Log File
+    start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"stim_log_{start_time_str}.csv"
+    
+    with open(log_filename, mode='w', newline='') as log_file:
+        csv_writer = csv.writer(log_file)
+        # Write CSV Header
+        csv_writer.writerow([
+            'Trial_Loop', 'Timestamp', 'Channels', 'Waveform', 
+            'Base_Amp_uA', 'Freq_Hz', 'Train_Dur_ms', 
+            'Phase_1_us', 'Interphase_Delay_us', 'Phase_2_us'
+        ])
 
-                # Map logical channels to hardware strings
-                hw_channels = [CHANNEL_MAP[ch] for ch in group]
+        for trial in range(nTrialsEachComb):
+            stim_combinations = get_stim_combs(SPATIAL_GROUPS, WAVEFORMS)
+            stim_record.extend(stim_combinations)
 
-                # 1. Program and arm all channels in the group
-                for channel in hw_channels:
-                    send_intan_command(s, f"set {channel}.StimStepSize 1.0") 
-                    
-                    num_pulses = int(freq * (train_dur_ms / 1000.0))
-                    period_us = 1000000 / freq if freq > 0 else 0
-                    
-                    send_intan_command(s, f"set {channel}.NumberOfStimPulses {num_pulses}")
-                    send_intan_command(s, f"set {channel}.StimPulsePeriod {period_us}")
+            print(f"\n--- Starting Trial Loop {trial + 1} ---")
+            print(f"Generated {len(stim_combinations)} randomized stimulation trials.")
 
-                    for phase_idx, phase in enumerate(waveform['phases']):
-                        phase_name = phase['name']
-                        calc_amp = base_amp * phase['amp_mult']
-                        phase_duration = pw_set[phase_idx]
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(2.0)
+                    s.connect((RHX_IP, RHX_PORT))
+                    print("Connected to Intan RHX.\n")
+
+                    for i, (group, waveform, pw_set, base_amp, freq, train_dur_ms) in enumerate(stim_combinations, 1):
+                        current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
+                        ch_string = "-".join([ch.upper() for ch in group])
+                        print(f"[{i}/{len(stim_combinations)}] Logical Chs: {ch_string} | {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
+
+                        num_pulses = int(freq * (train_dur_ms / 1000.0))
+                        period_us = 1000000 / freq if freq > 0 else 0
+                        pulse_or_train = "PulseTrain" if num_pulses > 1 else "SinglePulse"
+                        p1_dur, ip_delay, p2_dur = pw_set
+                        shape = "BiphasicWithInterphaseDelay" if ip_delay > 0 else "Biphasic"
+
+                        # 1. Build the batch command list for ALL channels in the group
+                        cmd_batch = []
+                        for channel in group:
+                            cmd_batch.extend([
+                                f"set {channel}.NumberOfStimPulses {num_pulses}",
+                                f"set {channel}.PulseTrainPeriodMicroseconds {period_us}",
+                                f"set {channel}.PulseOrTrain {pulse_or_train}",
+                                f"set {channel}.Shape {shape}",
+                                f"set {channel}.Polarity {waveform['polarity']}",
+                                f"set {channel}.FirstPhaseAmplitudeMicroAmps {base_amp}",
+                                f"set {channel}.FirstPhaseDurationMicroseconds {p1_dur}",
+                                f"set {channel}.InterphaseDelayMicroseconds {ip_delay}",
+                                f"set {channel}.SecondPhaseAmplitudeMicroAmps {base_amp}",
+                                f"set {channel}.SecondPhaseDurationMicroseconds {p2_dur}",
+                                f"set {channel}.Source KeypressF1",  
+                                f"set {channel}.StimEnabled True"    
+                            ])
+
+                        # 2. Send all parameters at once
+                        send_intan_batch(s, cmd_batch)
+
+                        # 3. Software Trigger via Keyboard Emulation
+                        pyautogui.press('f1')
                         
-                        send_intan_command(s, f"set {channel}.{phase_name}Polarity {phase['polarity']}")
-                        send_intan_command(s, f"set {channel}.{phase_name}Amplitude {calc_amp}")
-                        send_intan_command(s, f"set {channel}.{phase_name}Duration {phase_duration}")
+                        # 4. Log the exact execution time and parameters
+                        exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                        csv_writer.writerow([
+                            trial + 1, exec_time, ch_string, waveform['name'], 
+                            base_amp, freq, train_dur_ms, p1_dur, ip_delay, p2_dur
+                        ])
+                        log_file.flush() 
+                        
+                        # 5. Disarm all channels in the group
+                        disarm_batch = [f"set {channel}.StimEnabled False" for channel in group]
+                        send_intan_batch(s, disarm_batch)
+                        
+                        time.sleep(current_isi)
+                        
+                    print("\nProtocol complete.")
 
-                    # Arm channel
-                    send_intan_command(s, f"set {channel}.StimEnable true")
-
-                # 2. Trigger all armed channels simultaneously
-                if TRIGGER_METHOD == 'TCP':
-                    send_intan_command(s, "execute manualstimtrigger") 
-                elif TRIGGER_METHOD == 'TTL':
-                    fire_hardware_ttl()
-                
-                # 3. Disarm channels
-                for channel in hw_channels:
-                    send_intan_command(s, f"set {channel}.StimEnable false")
-                
-                time.sleep(current_isi)
-                
-            print("\nProtocol complete.")
-
-    except Exception as e:
-        print(f"Error: {e}")
+            except Exception as e:
+                print(f"Error: {e}")
 
 if __name__ == "__main__":
     main()
