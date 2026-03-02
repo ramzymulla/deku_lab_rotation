@@ -105,15 +105,25 @@ def main():
 
                     commands = \
 f"""set {channel}.NumberOfStimPulses {num_pulses}
+
 set {channel}.PulseTrainPeriodMicroseconds {period_us}
+
 set {channel}.PulseOrTrain {pulse_or_train}
+
 set {channel}.Shape {shape}
+
 set {channel}.Polarity {waveform['polarity']}
+
 set {channel}.FirstPhaseAmplitudeMicroAmps {base_amp}
+
 set {channel}.FirstPhaseDurationMicroseconds {p1_dur}
+
 set {channel}.InterphaseDelayMicroseconds {ip_delay}
+
 set {channel}.SecondPhaseAmplitudeMicroAmps {base_amp}
+
 set {channel}.SecondPhaseDurationMicroseconds {p2_dur}
+
 set {channel}.StimEnabled True"""
                     
                     # send_intan_command(s, f"set {channel}.NumberOfStimPulses {num_pulses}")
@@ -139,7 +149,7 @@ set {channel}.StimEnabled True"""
 
                     if TRIGGER_METHOD == 'TCP':
                         # RHX may not support direct software triggering via execute
-                        send_intan_command(s, "execute manualstimtrigger") 
+                        send_intan_command(s, "execute keypress-f1") 
                     elif TRIGGER_METHOD == 'TTL':
                         fire_hardware_ttl()
                     
