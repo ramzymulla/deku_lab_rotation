@@ -40,19 +40,29 @@ WAVEFORMS = [
 # ==========================================
 # 3. Execution Functions
 # ==========================================
+# ==========================================
+# 3. Execution Functions
+# ==========================================
 def send_intan_batch(sock, cmd_list):
-    """Sends a list of commands as a single batched string."""
-    batch_string = ";\n\n".join(cmd_list) + "\n"
-    sock.sendall(batch_string.encode('utf-8'))
-
-    try:
-        # Increased buffer size to catch all batched return messages
-        response = sock.recv(8192).decode('utf-8').strip()
-        if DEBUG:
-            print(f"Batch Sent. Response:\n{response}")
-        return response
-    except socket.timeout:
-        return "Timeout"
+    """Sends commands individually but instantly, bypassing blocking reads."""
+    # Set socket to non-blocking so it doesn't wait for silent successful returns
+    sock.setblocking(False)
+    
+    for cmd in cmd_list:
+        sock.sendall(f"{cmd}\n".encode('utf-8'))
+        time.sleep(0.002) # 2ms delay gives Intan's parser time to process the buffer
+        
+        try:
+            # Catch any immediate error messages
+            response = sock.recv(1024).decode('utf-8').strip()
+            if DEBUG and response:
+                print(f"Server Error: {response}")
+        except BlockingIOError:
+            # A BlockingIOError here means Intan stayed silent (Command Accepted)
+            pass
+            
+    # Restore normal blocking for the rest of the script
+    sock.setblocking(True)
 
 def get_stim_combs(chs, wfs):
     stim_combinations = []
