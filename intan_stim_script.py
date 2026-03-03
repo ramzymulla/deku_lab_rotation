@@ -3,7 +3,6 @@ import time
 import random
 import itertools
 import sys
-import pyautogui # Required for software triggering
 import csv
 from datetime import datetime
 
@@ -48,8 +47,8 @@ def send_intan_batch(sock, cmd_list):
     sock.setblocking(False)
     
     for cmd in cmd_list:
-        sock.sendall(f"{cmd}\n".encode('utf-8'))
-        time.sleep(0.002) # 2ms delay gives Intan's parser time to process the buffer
+        sock.sendall(f"{cmd};\n".encode('utf-8'))
+        time.sleep(0.02) # 2ms delay gives Intan's parser time to process the buffer
         
         try:
             # Catch any immediate error messages
@@ -75,7 +74,7 @@ def get_stim_combs(wfs):
 
 def main():
     stim_record = []
-    nTrialsEachComb = 20
+    nTrialsEachComb = 2
 
     # Initialize CSV Log File
     start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -96,6 +95,9 @@ def main():
                 s.settimeout(2.0)
                 s.connect((RHX_IP, RHX_PORT))
                 print("Connected to Intan RHX.\n")
+                stim_combinations = get_stim_combs(WAVEFORMS)
+
+		
 
                 for i, (waveform, pw_set, base_amp, freq, train_dur_ms) in enumerate(stim_combinations, 1):
                     
@@ -109,7 +111,7 @@ def main():
                         p1_dur, ip_delay, p2_dur = pw_set
                         shape = "BiphasicWithInterphaseDelay" if ip_delay > 0 else "Biphasic"
 
-                        s.sendall(b"set runmode stop")
+
 
                         # 1. Build the batch command list
                         cmd_batch=[]
@@ -130,20 +132,21 @@ def main():
                             
                         # 2. Send all parameters at once
                         send_intan_batch(s, cmd_batch)
-                        send_intan_batch(s, f"execute UploadStimParameters")
+                        time.sleep(2)
+                        s.sendall(b"execute UploadStimParameters;")
 
                         
-                        stim_combinations = get_stim_combs(WAVEFORMS)
-                        print(f"Generated {len(stim_combinations)} randomized stimulation trials.")
-                        while s.sendall(b'get UploadInProgress'):
-                            time.sleep(0.2)
-                        s.sendall(b'set runmode run')
+                        
+                        print(f"Uploading Stimulation Parameters.")
+                        time.sleep(5)                        
+                        s.sendall(b'set runmode run;')
+                        time.sleep(5)
                         chanInds = [i for i in range(len(channelSet))]
                         for trial in range(nTrialsEachComb):
                             chanOrder = random.sample(chanInds,len(channelSet))
-                            for chanInd in chanInds:
+                            for chanInd in chanOrder:
                                 current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
-                                s.sendall(f'execute ManualTriggerPulse f{chanInd+1}'.encode('utf-8'))
+                                s.sendall(f"execute ManualStimTriggerPulse f{chanInd+1};".encode('utf-8'))
 
                                 # 4. Log the exact execution time and parameters
                                 exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -152,13 +155,14 @@ def main():
                                     base_amp, freq, train_dur_ms, p1_dur, ip_delay, p2_dur
                                 ])
                                 
+                                print(f"Stimulating {channelSet[chanInd]}")
                                 log_file.flush() 
 
                                 time.sleep(current_isi)
 
                         # 5. Disarm Channels
-                        s.sendall(b"set runmode stop")
-                        send_intan_batch(s, f"execute ClearAllStimParameters")
+                        s.sendall(b"set runmode stop;")
+                        send_intan_batch(s,[f"set {channel}.StimEnabled False" for channel in channelSet])
                     
                     
                 print("\nProtocol complete.")
