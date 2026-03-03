@@ -69,7 +69,7 @@ def get_stim_combs(wfs):
             [wf], wf['pulseWidths'], wf['amplitudes'], wf['frequencies'], wf['pulseDurations']
         ))
         stim_combinations.extend(wf_combos)
-    random.shuffle(stim_combinations)
+    # random.shuffle(stim_combinations)
     return stim_combinations
 
 def main():
