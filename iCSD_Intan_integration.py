@@ -1,6 +1,13 @@
 import socket
+import os
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
+
+homeDir = os.path.expanduser("~")
+sys.path.insert(0,os.path.join(homeDir,'src','elephant'))
+from elephant.elephant.current_source_density_src import icsd
+
 
 # ==========================================
 # 1. Configuration
@@ -9,9 +16,11 @@ RHX_IP = '127.0.0.1'
 DATA_PORT = 5001  # Only the Data Output server is needed
 
 # Hardware Setup
-NUM_CHANNELS = 16
-SPACING_MM = 0.05
+NUM_CHANNELS = 32
+SPACING_MM = 0.1
 SAMPLE_RATE = 30000
+CHANNELS_TO_USE = [24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28]
+NUM_CHANNELS_TO_USE = len(CHANNELS_TO_USE)
 
 # Streaming & Visualization Parameters
 DOWNSAMPLE_FACTOR = 30               # 30kHz -> 1kHz LFP rate
@@ -29,12 +38,16 @@ BYTES_PER_CHUNK = CHUNK_SAMPLES * NUM_CHANNELS * 2
 # ==========================================
 def compute_1d_csd(lfp_matrix, spacing):
     """Computes standard 1D CSD using the second spatial derivative."""
-    v_z_plus_1 = lfp_matrix[2:, :]
-    v_z = lfp_matrix[1:-1, :]
-    v_z_minus_1 = lfp_matrix[:-2, :]
+    # v_z_plus_1 = lfp_matrix[2:, :]
+    # v_z = lfp_matrix[1:-1, :]
+    # v_z_minus_1 = lfp_matrix[:-2, :]
     
-    csd = -1 * (v_z_plus_1 - 2 * v_z + v_z_minus_1) / (spacing ** 2)
-    return csd
+    # csd = -1 * (v_z_plus_1 - 2 * v_z + v_z_minus_1) / (spacing ** 2)
+    # return csd
+
+    csd = icsd.StandardCSD(lfp_matrix,spacing)
+
+    return csd.get_csd()
 
 def process_intan_chunk(raw_bytes):
     """Converts raw TCP bytes to microvolts and downsamples to LFP rate."""
@@ -46,11 +59,14 @@ def process_intan_chunk(raw_bytes):
     elif len(data) < expected_length:
         data = np.pad(data, (0, expected_length - len(data)))
         
+    # Reshape data (shape nChan x nTimeBin)
     data = data.reshape((CHUNK_SAMPLES, NUM_CHANNELS)).T
+
+    # Convert to voltage
     voltage = (data.astype(np.float32) - 32768) * 0.195
     
-    # Fast decimation for real-time visualization
-    lfp = voltage[:, ::DOWNSAMPLE_FACTOR]
+    # Fast decimation for real-time visualization, LFP shape (nChanToUse x nDownsampledTimeBin)
+    lfp = voltage[CHANNELS_TO_USE, ::DOWNSAMPLE_FACTOR]
     return lfp
 
 # ==========================================
@@ -60,16 +76,16 @@ def main():
     plt.ion()
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    cax = ax.imshow(np.zeros((NUM_CHANNELS - 2, WINDOW_SAMPLES)), 
+    cax = ax.imshow(np.zeros((NUM_CHANNELS_TO_USE - 2, WINDOW_SAMPLES)), 
                     aspect='auto', cmap='jet', vmin=-1000, vmax=1000,
-                    extent=[-WINDOW_SEC, 0, NUM_CHANNELS-1, 2])
+                    extent=(-WINDOW_SEC, 0, NUM_CHANNELS_TO_USE-1, 2))
     
     ax.set_title("Continuous Real-Time CSD")
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Channel (Depth)")
     fig.colorbar(cax, label="CSD Amplitude")
     
-    # Initialize rolling LFP buffer
+    # Initialize rolling LFP buffer (shape nChan x nTimeBin)
     lfp_buffer = np.zeros((NUM_CHANNELS, WINDOW_SAMPLES))
 
     print(f"Connecting to Intan RHX Data Server at {RHX_IP}:{DATA_PORT}...")
