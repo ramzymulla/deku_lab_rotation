@@ -3,7 +3,9 @@ import time
 import random
 import itertools
 import sys
+import os
 import csv
+import pyautogui
 from datetime import datetime
 
 DEBUG = False
@@ -22,17 +24,20 @@ RHX_PORT = 5000
 ISI_BASE = 2.0        
 ISI_JITTER = 0.5      
 
+fKeys = [f"f{i}" for i in range(1,9)]
+
 shankOrder = [24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28]
 nChan = len(shankOrder)
 CHANNELS = [f"a-{site:03d}" for site in shankOrder] 
-channelSets = [CHANNELS[::2],CHANNELS[1::2]]
+channelSets = [CHANNELS[:8],        # 8 channels starting from tip
+               CHANNELS[8::-1]]     # 8 channels starting from base
 
 WAVEFORMS = [
     {
         'name': 'Symmetric Biphasic Cathodic-First',
         'polarity': 'NegativeFirst',
         'pulseWidths': [[200, 40, 200]],             
-        'amplitudes': [0, 1, 2, 5, 10, 20, 40],         
+        'amplitudes': [1, 2, 5, 10, 20, 40, 0],         
         'frequencies': [320],                           
         'pulseDurations': [650]                         
     }
@@ -78,7 +83,9 @@ def main():
 
     # Initialize CSV Log File
     start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"single_channel_stim_log_{start_time_str}.csv"
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    log_filename = os.path.join('logs',f"single_channel_stim_log_{start_time_str}.csv")
     
     with open(log_filename, mode='w', newline='') as log_file:
         csv_writer = csv.writer(log_file)
@@ -88,7 +95,6 @@ def main():
             'Base_Amp_uA', 'Freq_Hz', 'Train_Dur_ms', 
             'Phase_1_us', 'Interphase_Delay_us', 'Phase_2_us'
         ])
-
 
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -149,7 +155,8 @@ def main():
                             for chanInd in chanOrder:
                                 trialsCtr += 1
                                 current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
-                                s.sendall(f"execute ManualStimTriggerPulse f{chanInd+1};".encode('utf-8'))
+                                # s.sendall(f"execute ManualStimTriggerPulse f{chanInd+1};".encode('utf-8'))
+                                pyautogui.press(fKeys[:chanInd+1])
 
                                 # 4. Log the exact execution time and parameters
                                 exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]

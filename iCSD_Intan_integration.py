@@ -3,10 +3,11 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import quantities as pq
 
 homeDir = os.path.expanduser("~")
-sys.path.insert(0,os.path.join(homeDir,'src','elephant'))
-from elephant.elephant.current_source_density_src import icsd
+sys.path.insert(0,os.path.join(homeDir,'src','elephant','elephant','current_source_density_src'))
+import icsd
 
 
 # ==========================================
@@ -17,7 +18,7 @@ DATA_PORT = 5001  # Only the Data Output server is needed
 
 # Hardware Setup
 NUM_CHANNELS = 32
-SPACING_MM = 0.1
+SPACING_M = 0.0001
 SAMPLE_RATE = 30000
 CHANNELS_TO_USE = [24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28]
 NUM_CHANNELS_TO_USE = len(CHANNELS_TO_USE)
@@ -45,7 +46,7 @@ def compute_1d_csd(lfp_matrix, spacing):
     # csd = -1 * (v_z_plus_1 - 2 * v_z + v_z_minus_1) / (spacing ** 2)
     # return csd
 
-    csd = icsd.StandardCSD(lfp_matrix,spacing)
+    csd = icsd.DeltaiCSD(lfp_matrix*1E-6*pq.V,spacing*np.arange(NUM_CHANNELS_TO_USE)*pq.m)
 
     return csd.get_csd()
 
@@ -86,7 +87,7 @@ def main():
     fig.colorbar(cax, label="CSD Amplitude")
     
     # Initialize rolling LFP buffer (shape nChan x nTimeBin)
-    lfp_buffer = np.zeros((NUM_CHANNELS, WINDOW_SAMPLES))
+    lfp_buffer = np.zeros((NUM_CHANNELS_TO_USE, WINDOW_SAMPLES))
 
     print(f"Connecting to Intan RHX Data Server at {RHX_IP}:{DATA_PORT}...")
     try:
@@ -111,7 +112,7 @@ def main():
                 lfp_buffer[:, -LFP_CHUNK_SAMPLES:] = new_lfp
                 
                 # 4. Compute CSD on the whole window
-                csd_matrix = compute_1d_csd(lfp_buffer, SPACING_MM)
+                csd_matrix = compute_1d_csd(lfp_buffer, SPACING_M)
                 
                 # 5. Update display
                 cax.set_data(csd_matrix)
