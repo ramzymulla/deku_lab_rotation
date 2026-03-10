@@ -132,8 +132,7 @@ def main():
                                 f"execute UploadStimParameters {channel};"]
                             
                         ### Send/upload stim params ###
-                        send_intan_batch(s, cmd_batch)
-                        time.sleep(current_isi)                        
+                        send_intan_batch(s, cmd_batch)                 
 
                         ### Start recording ### 
                         if DEBUG:
@@ -148,6 +147,7 @@ def main():
                         trialsCtr += 1
                         current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
                         s.sendall(b"execute ManualStimTriggerPulse f1;")
+                        time.sleep(current_isi + train_dur_ms/1000)       
 
                         # 4. Log the exact execution time and parameters
                         exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
