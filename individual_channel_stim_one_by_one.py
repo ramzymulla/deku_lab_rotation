@@ -131,13 +131,15 @@ def main():
                                 f"set {channel}.SecondPhaseDurationMicroseconds {p2_dur}",
                                 f"set {channel}.Source KeypressF1",  
                                 f"set {channel}.StimEnabled True",
-                                f"execute UploadStimParameters {channel};"]
+                                f"execute UploadStimParameters {channel}"]
                             
                         ### Send/upload stim params ###
                         send_intan_batch(s, cmd_batch)
                         current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)       
                         time.sleep(current_isi)          
 
+                        while s.sendall(b'execute UploadInProgress;'):
+                            time.sleep(0.1)
                         ### Start recording ### 
                         if DEBUG:
                             s.sendall(b'set runmode run;')
@@ -166,6 +168,7 @@ def main():
                         # 5. Disarm Channel
                         send_intan_batch(s,[f"set {channel}.StimEnabled False",
                                             f"execute UploadStimParameters {channel}"])
+                        time.sleep(0.25)
                     
                     
                 print("\nProtocol complete.")
