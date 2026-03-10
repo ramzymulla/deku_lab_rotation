@@ -19,14 +19,16 @@ RHX_PORT = 5000
 # ==========================================
 # 2. Timing & Parameter Space
 # ==========================================
-ISI_BASE = 2.0        
-ISI_JITTER = 0.5      
+ISI_BASE = 1.0        
+ISI_JITTER = 0.25      
 
 baselineDuration = 5        # minutes of baseline before stim
 
 shankOrder = [24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28]
 nChan = len(shankOrder)
 CHANNELS = [f"a-{site:03d}" for site in shankOrder] 
+pre_dur_s = 0.5
+post_dur_s = 2
 
 WAVEFORMS = [
     {
@@ -104,7 +106,7 @@ def main():
                     for i, (channel,waveform, pw_set, base_amp, freq, train_dur_ms) in enumerate(stim_combinations, 1):
                         
                         s.sendall(b"set runmode stop;")     # make sure acquisition is off
-                        # print(f"[{i}/{len(stim_combinations)}] {channel} | {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
+                
 
                         ### Set up spike train ###
                         num_pulses = int(freq * (train_dur_ms / 1000.0))
@@ -132,7 +134,9 @@ def main():
                                 f"execute UploadStimParameters {channel};"]
                             
                         ### Send/upload stim params ###
-                        send_intan_batch(s, cmd_batch)                 
+                        send_intan_batch(s, cmd_batch)
+                        current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)       
+                        time.sleep(current_isi)          
 
                         ### Start recording ### 
                         if DEBUG:
@@ -141,13 +145,12 @@ def main():
                         else:
                             s.sendall(b'set runmode record;')
 
-                        time.sleep(0.5)                  # record baseline activity
+                        time.sleep(pre_dur_s)                  # record baseline activity
                         
                         
                         trialsCtr += 1
-                        current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
                         s.sendall(b"execute ManualStimTriggerPulse f1;")
-                        time.sleep(current_isi + train_dur_ms/1000)       
+                        time.sleep(train_dur_ms/1000 + post_dur_s)       
 
                         # 4. Log the exact execution time and parameters
                         exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -156,12 +159,13 @@ def main():
                             base_amp, freq, train_dur_ms, p1_dur, ip_delay, p2_dur
                         ])
                         
-                        print(f"{trialsCtr}\tStimulating {channel}")
+                        print(f"{trialsCtr}\tStimulating {channel}\t {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
                         log_file.flush() 
 
                         
-                        # 5. Disarm Channels
-                        send_intan_batch(s,[f"set {channel}.StimEnabled False;"])
+                        # 5. Disarm Channel
+                        send_intan_batch(s,[f"set {channel}.StimEnabled False",
+                                            f"execute UploadStimParameters {channel}"])
                     
                     
                 print("\nProtocol complete.")
