@@ -22,6 +22,8 @@ RHX_PORT = 5000
 ISI_BASE = 2.0        
 ISI_JITTER = 0.5      
 
+baselineDuration = 5        # minutes of baseline before stim
+
 shankOrder = [24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28]
 nChan = len(shankOrder)
 CHANNELS = [f"a-{site:03d}" for site in shankOrder] 
@@ -139,8 +141,13 @@ def main():
                         time.sleep(5)                        
 
                         ### Start recording ### 
-                        s.sendall(b'set runmode run;')
-                        time.sleep(30)                  # get 30 seconds initial acitivity
+                        if DEBUG:
+                            s.sendall(b'set runmode run;')
+
+                        else:
+                            s.sendall(b'set runmode record;')
+
+                        time.sleep(60*baselineDuration)                  # record baseline activity
                         chanInds = [i for i in range(len(channelSet))]
 
                         trialsCtr = 0
@@ -164,7 +171,7 @@ def main():
                                 time.sleep(current_isi)
 
                         # 5. Disarm Channels
-                        send_intan_batch(s,[f"set {channel}.StimEnabled False" for channel in channelSet])
+                        send_intan_batch(s,[f"set {channel}.StimEnabled False;" for channel in channelSet])
                     
                     
                 print("\nProtocol complete.")

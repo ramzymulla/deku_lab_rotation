@@ -3,9 +3,7 @@ import time
 import random
 import itertools
 import sys
-import os
 import csv
-import pyautogui
 from datetime import datetime
 
 DEBUG = False
@@ -26,20 +24,16 @@ ISI_JITTER = 0.5
 
 baselineDuration = 5        # minutes of baseline before stim
 
-fKeys = [f"f{i}" for i in range(1,9)]
-
 shankOrder = [24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28]
 nChan = len(shankOrder)
 CHANNELS = [f"a-{site:03d}" for site in shankOrder] 
-channelSets = [CHANNELS[:8],        # 8 channels starting from tip
-               CHANNELS[8:][::-1]]     # 8 channels starting from base
 
 WAVEFORMS = [
     {
         'name': 'Symmetric Biphasic Cathodic-First',
         'polarity': 'NegativeFirst',
         'pulseWidths': [[200, 40, 200]],             
-        'amplitudes': [5],         
+        'amplitudes': [1, 2, 5, 10, 20, 40, 0],         
         'frequencies': [320],                           
         'pulseDurations': [650]                         
     }
@@ -73,7 +67,7 @@ def get_stim_combs(wfs):
     stim_combinations = []
     for wf in wfs:
         wf_combos = list(itertools.product(
-            [wf], wf['pulseWidths'], wf['amplitudes'], wf['frequencies'], wf['pulseDurations']
+            CHANNELS, [wf], wf['pulseWidths'], wf['amplitudes'], wf['frequencies'], wf['pulseDurations']
         ))
         stim_combinations.extend(wf_combos)
     # random.shuffle(stim_combinations)
@@ -85,9 +79,7 @@ def main():
 
     # Initialize CSV Log File
     start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if not os.path.exists('logs'):
-        os.mkdir('logs')
-    log_filename = os.path.join('logs',f"single_channel_stim_log_{start_time_str}.csv")
+    log_filename = f"single_channel_stim_log_{start_time_str}.csv"
     
     with open(log_filename, mode='w', newline='') as log_file:
         csv_writer = csv.writer(log_file)
@@ -98,20 +90,21 @@ def main():
             'Phase_1_us', 'Interphase_Delay_us', 'Phase_2_us'
         ])
 
+
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(2.0)
                 s.connect((RHX_IP, RHX_PORT))
                 print("Connected to Intan RHX.\n")
-                stim_combinations = get_stim_combs(WAVEFORMS)
-
-		
-
-                for i, (waveform, pw_set, base_amp, freq, train_dur_ms) in enumerate(stim_combinations, 1):
-                    
-                    for channelSet in channelSets:
+ 
+                trialsCtr = 0
+                for trial in range(nTrialsEachComb):
+                    stim_combinations = get_stim_combs(WAVEFORMS)
+                    random.shuffle(stim_combinations)
+                    for i, (channel,waveform, pw_set, base_amp, freq, train_dur_ms) in enumerate(stim_combinations, 1):
+                        
                         s.sendall(b"set runmode stop;")     # make sure acquisition is off
-                        print(f"[{i}/{len(stim_combinations)}] {channelSet} | {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
+                        # print(f"[{i}/{len(stim_combinations)}] {channel} | {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
 
                         ### Set up spike train ###
                         num_pulses = int(freq * (train_dur_ms / 1000.0))
@@ -123,9 +116,7 @@ def main():
 
 
                         ### Build the batch command list ###
-                        cmd_batch=[]
-                        for indc,channel in enumerate(channelSet):
-                            cmd_batch.extend([
+                        cmd_batch= [
                                 f"set {channel}.NumberOfStimPulses {num_pulses}",
                                 f"set {channel}.PulseTrainPeriodMicroseconds {period_us}",
                                 f"set {channel}.PulseOrTrain {pulse_or_train}",
@@ -136,48 +127,41 @@ def main():
                                 f"set {channel}.InterphaseDelayMicroseconds {ip_delay}",
                                 f"set {channel}.SecondPhaseAmplitudeMicroAmps {base_amp}",
                                 f"set {channel}.SecondPhaseDurationMicroseconds {p2_dur}",
-                                f"set {channel}.Source KeypressF{indc+1}",  
-                                f"set {channel}.StimEnabled True"])
+                                f"set {channel}.Source KeypressF1",  
+                                f"set {channel}.StimEnabled True",
+                                f"execute UploadStimParameters {channel};"]
                             
                         ### Send/upload stim params ###
                         send_intan_batch(s, cmd_batch)
-                        time.sleep(2)
-                        s.sendall(b"execute UploadStimParameters;")
-                        print(f"Uploading Stimulation Parameters.")
-                        time.sleep(5)                        
+                        time.sleep(current_isi)                        
 
                         ### Start recording ### 
                         if DEBUG:
                             s.sendall(b'set runmode run;')
+
                         else:
                             s.sendall(b'set runmode record;')
 
-                        time.sleep(60*baselineDuration)                  # record baseline
-                        chanInds = [i for i in range(len(channelSet))]
+                        time.sleep(0.5)                  # record baseline activity
+                        
+                        
+                        trialsCtr += 1
+                        current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
+                        s.sendall(b"execute ManualStimTriggerPulse f1;")
 
-                        trialsCtr = 0
-                        for trial in range(nTrialsEachComb):
-                            chanOrder = random.sample(chanInds,len(channelSet))
-                            for chanInd in chanOrder:
-                                trialsCtr += 1
-                                current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
-                                # s.sendall(f"execute ManualStimTriggerPulse f{chanInd+1};".encode('utf-8'))
-                                pyautogui.press(fKeys[:chanInd+1])
+                        # 4. Log the exact execution time and parameters
+                        exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                        csv_writer.writerow([
+                            channel, exec_time, waveform['name'], 
+                            base_amp, freq, train_dur_ms, p1_dur, ip_delay, p2_dur
+                        ])
+                        
+                        print(f"{trialsCtr}\tStimulating {channel}")
+                        log_file.flush() 
 
-                                # 4. Log the exact execution time and parameters
-                                exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                                csv_writer.writerow([
-                                    channelSet[:chanInd+1], exec_time, waveform['name'], 
-                                    base_amp, freq, train_dur_ms, p1_dur, ip_delay, p2_dur
-                                ])
-                                
-                                print(f"{trialsCtr}\tStimulating {channelSet[:chanInd+1]}\t({fKeys[:chanInd+1]})")
-                                log_file.flush() 
-
-                                time.sleep(current_isi)
-
+                        
                         # 5. Disarm Channels
-                        send_intan_batch(s,[f"set {channel}.StimEnabled False" for channel in channelSet])
+                        send_intan_batch(s,[f"set {channel}.StimEnabled False;"])
                     
                     
                 print("\nProtocol complete.")
