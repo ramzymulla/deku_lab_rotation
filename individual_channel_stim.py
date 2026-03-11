@@ -3,6 +3,7 @@ import time
 import random
 import itertools
 import sys
+import os
 import csv
 from datetime import datetime
 
@@ -96,7 +97,9 @@ def main():
 
     # Initialize CSV Log File
     start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"single_channel_stim_log_{start_time_str}.csv"
+    if not os.exists('stim_logs'):
+        os.mkdir('stim_logs')
+    log_filename = os.path.join(f"stim_logs"f"single_channel_stim_log_{start_time_str}.csv")
     
     with open(log_filename, mode='w', newline='') as log_file:
         csv_writer = csv.writer(log_file)
