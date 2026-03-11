@@ -23,7 +23,7 @@ RHX_PORT = 5000
 ISI_BASE = 2.0        
 ISI_JITTER = 0.5      
 
-baselineDuration = 5        # minutes of baseline before stim
+baselineDuration = 0.5        # minutes of baseline before stim
 
 shankOrder = [24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28]
 nChan = len(shankOrder)
@@ -97,7 +97,7 @@ def main():
 
     # Initialize CSV Log File
     start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if not os.exists('stim_logs'):
+    if not os.path.exists('stim_logs'):
         os.mkdir('stim_logs')
     log_filename = os.path.join(f"stim_logs"f"single_channel_stim_log_{start_time_str}.csv")
     
