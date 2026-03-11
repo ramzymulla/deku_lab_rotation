@@ -29,14 +29,30 @@ nChan = len(shankOrder)
 CHANNELS = [f"a-{site:03d}" for site in shankOrder] 
 channelSets = [CHANNELS[::2],CHANNELS[1::2]]
 
+pulseWidthToUse = 200       # us
+electrodeDiameter = 40      # um
+electrodeArea = (22/7)*((electrodeDiameter/2)**2)
+areaToMatch = (22/7)*((75/2)**2)
+coulsToMatch = [0,0.5,1,2,3,4,5]
+coulsToUse = [couls*(electrodeArea/areaToMatch) for couls in coulsToMatch]       # nC/phase
+ampsToUse = [couls/(pulseWidthToUse*(1e-3)) for couls in coulsToUse]
+
 WAVEFORMS = [
     {
-        'name': 'Symmetric Biphasic Cathodic-First',
+        'name': 'Symmetric Biphasic Cathodic-First Pulse Train',
         'polarity': 'NegativeFirst',
         'pulseWidths': [[200, 40, 200]],             
-        'amplitudes': [1, 2, 5, 10, 20, 40, 0],         
+        'amplitudes': ampsToUse,         
         'frequencies': [320],                           
-        'pulseDurations': [650]                         
+        'pulseDurations': [250,650]                         
+    },
+    {
+        'name': 'Symmetric Biphasic Cathodic-First Single Pulse',
+        'polarity': 'NegativeFirst',
+        'pulseWidths': [[200, 100, 200]],             
+        'amplitudes': [0,10,20,40,80,100],
+        'frequencies': [1],                           
+        'pulseDurations': [1]                                        
     }
 ]
 
@@ -108,7 +124,7 @@ def main():
                         print(f"[{i}/{len(stim_combinations)}] {channelSet} | {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
 
                         ### Set up spike train ###
-                        num_pulses = int(freq * (train_dur_ms / 1000.0))
+                        num_pulses = int(freq * (train_dur_ms / 1000.0)) if "train" in waveform.lower() else 1
                         period_us = 1000000 / freq if freq > 0 else 0
                         pulse_or_train = "PulseTrain" if num_pulses > 1 else "SinglePulse"
                         p1_dur, ip_delay, p2_dur = pw_set

@@ -92,12 +92,13 @@ def main():
             'Phase_1_us', 'Interphase_Delay_us', 'Phase_2_us'
         ])
 
-
+        
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(2.0)
                 s.connect((RHX_IP, RHX_PORT))
                 print("Connected to Intan RHX.\n")
+                s.sendall(b"set runmode stop;")     # make sure acquisition is off
  
                 trialsCtr = 0
                 for trial in range(nTrialsEachComb):
@@ -105,7 +106,7 @@ def main():
                     random.shuffle(stim_combinations)
                     for i, (channel,waveform, pw_set, base_amp, freq, train_dur_ms) in enumerate(stim_combinations, 1):
                         
-                        s.sendall(b"set runmode stop;")     # make sure acquisition is off
+                        
                 
 
                         ### Set up spike train ###
@@ -164,12 +165,12 @@ def main():
                         print(f"{trialsCtr}\tStimulating {channel}\t {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
                         log_file.flush() 
 
-                        
+                        s.sendall(b"set runmode stop;")     # make sure acquisition is off
                         # 5. Disarm Channel
                         send_intan_batch(s,[f"set {channel}.StimEnabled False",
                                             f"execute UploadStimParameters {channel}"])
                         time.sleep(0.25)
-                    
+
                     
                 print("\nProtocol complete.")
 
