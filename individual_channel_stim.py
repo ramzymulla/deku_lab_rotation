@@ -43,7 +43,7 @@ WAVEFORMS = [
         'polarity': 'NegativeFirst',
         'pulseWidths': [[200, 40, 200]],             
         'amplitudes': ampsToUse,         
-        'frequencies': [320],                           
+        'frequencies': [160,320],                           
         'pulseDurations': [250,650]                         
     },
     {
@@ -92,7 +92,7 @@ def get_stim_combs(wfs):
 
 def main():
     stim_record = []
-    nTrialsEachComb = 2
+    nTrialsEachComb = 5
 
     # Initialize CSV Log File
     start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -124,7 +124,7 @@ def main():
                         print(f"[{i}/{len(stim_combinations)}] {channelSet} | {base_amp}uA, {freq}Hz, {train_dur_ms}ms")
 
                         ### Set up spike train ###
-                        num_pulses = int(freq * (train_dur_ms / 1000.0)) if "train" in waveform.lower() else 1
+                        num_pulses = int(freq * (train_dur_ms / 1000.0)) if "train" in waveform['name'].lower() else 1
                         period_us = 1000000 / freq if freq > 0 else 0
                         pulse_or_train = "PulseTrain" if num_pulses > 1 else "SinglePulse"
                         p1_dur, ip_delay, p2_dur = pw_set
