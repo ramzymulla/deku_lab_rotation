@@ -24,7 +24,6 @@ RHX_PORT = 5000
 ISI_BASE = 2.0        
 ISI_JITTER = 0.5      
 
-baselineDuration = 5        # minutes of baseline before stim
 
 fKeys = [f"f{i}" for i in range(1,9)]
 

@@ -26,7 +26,7 @@ NUM_CHANNELS_TO_USE = len(CHANNELS_TO_USE)
 # Streaming & Visualization Parameters
 DOWNSAMPLE_FACTOR = 30               # 30kHz -> 1kHz LFP rate
 LFP_RATE = SAMPLE_RATE // DOWNSAMPLE_FACTOR
-WINDOW_SEC = 1.0                     # How much time to show on screen
+WINDOW_SEC = 10.0                     # How much time to show on screen
 CHUNK_SEC = 0.1                      # How frequently the screen updates (100ms)
 
 WINDOW_SAMPLES = int(LFP_RATE * WINDOW_SEC)
@@ -80,7 +80,7 @@ def main():
     cax = ax.imshow(np.zeros((NUM_CHANNELS_TO_USE - 2, WINDOW_SAMPLES)), 
                     aspect='auto', cmap='jet', vmin=-1000, vmax=1000,
                     extent=(-WINDOW_SEC, 0, NUM_CHANNELS_TO_USE-1, 2))
-    
+    cax.set_clim(vmin = -30, vmax = 30)
     ax.set_title("Continuous Real-Time CSD")
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Channel (Depth)")
@@ -119,7 +119,7 @@ def main():
                 
                 # Auto-scale colorbar slightly to track spontaneous burst amplitudes
                 current_max = np.max(np.abs(csd_matrix))
-                if current_max > 0:
+                if current_max > 0 and 0:
                     cax.set_clim(vmin=-current_max*0.8, vmax=current_max*0.8)
                 
                 fig.canvas.flush_events()
