@@ -1,6 +1,0 @@
-Channel,Timestamp,Waveform,Base_Amp_uA,Freq_Hz,Train_Dur_ms,Phase_1_us,Interphase_Delay_us,Phase_2_us
-a-025,2026-03-04 17:56:44.513,Symmetric Biphasic Cathodic-First,1,320,650,200,40,200
-a-026,2026-03-04 17:56:46.982,Symmetric Biphasic Cathodic-First,1,320,650,200,40,200
-a-007,2026-03-04 17:56:49.270,Symmetric Biphasic Cathodic-First,1,320,650,200,40,200
-a-006,2026-03-04 17:56:51.439,Symmetric Biphasic Cathodic-First,1,320,650,200,40,200
-a-004,2026-03-04 17:56:53.768,Symmetric Biphasic Cathodic-First,1,320,650,200,40,200

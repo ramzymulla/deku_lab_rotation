@@ -20,4 +20,3 @@ DONUT_ORDER = [[20,  8],
                 [12, 16]]
 
 DONUT_CHANS = [[f"a-{site:03d}" for site in angle] for angle in DONUT_ORDER]
-

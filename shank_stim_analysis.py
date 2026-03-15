@@ -3,6 +3,7 @@ import os
 import csv
 import spikeinterface.core as si
 import spikeinterface.extractors as se
+import spikeinterface.preprocessing as sp
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -10,16 +11,6 @@ from scipy import signal
 import time
 import studyparams
 import matplotlib.pyplot as plt
-
-
-from intanutil.header import (read_header,
-                              header_to_result)
-from intanutil.data import (calculate_data_size,
-                            read_all_data_blocks,
-                            check_end_of_file,
-                            parse_data,
-                            data_to_result)
-from intanutil.filter import apply_notch_filter
 
 subject = 'FD006'
 date = '260311'
@@ -31,7 +22,7 @@ nonStimEdata = {
 }
 
 edataToUse = {
-    'site1'     :   ('160803','182602'),   # original insertion
+    'site1'     :   ('160803','182402'),   # original insertion
     # 'site2'     :   ''
 }
 
@@ -40,23 +31,72 @@ bdataToUse = {
     # 'site2'     :   ''
 }
 
+def get_events_and_LFPs(recordingsEachSite, 
+                          timeRange = [-0.5,1.5], 
+                          highcut = 300, 
+                          sampleRate = 30000,
+                          downFactor = 1):
+
+    downsampleRate = sampleRate//downFactor
+    sampleRange = [1+int(t*downsampleRate) for t in timeRange]
+    nSamplesToExtract = sampleRange[1]-sampleRange[0]
+
+    bCoeff, aCoeff = signal.iirfilter(4, Wn=highcut, fs=downsampleRate, btype="low", ftype="butter")
+
+    eventLockedLFP = np.empty((0,nSamplesToExtract,nChannels),dtype=np.int16)
+
+    ### get traces ###
+    nRecordingsThisSite = len(recordingsEachSite[site])
+    channelStimEachTrial = []
+    print(f'---- loading traces for {site} ----')
+    for indr,recording in enumerate(recordingsEachSite[site]):
+        data, stims = [recording[stream].get_traces() for stream in recording]
+
+        stims = np.argmax(np.hstack([stims**2, np.ones((stims.shape[0],1))]),axis=1) - 32
+
+        stimInds = np.nonzero(stims)[0]
+        stimOnsetInds = np.concat([stimInds[:1],stimInds[1:][(np.diff(stimInds) > ISI*sampleRate)]])//downFactor
+        channelStimEachTrial.extend(stims[stimOnsetInds])
+        
+
+        nTrials = len(stimOnsetInds)
+
+        currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)
+
+        for indt, evSample in enumerate(stimOnsetInds):
+            if evSample + sampleRange[0] < 0:
+                break
+            currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
+
+        eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
+
+        if (100*indr/nRecordingsThisSite)%5 == 0:
+            print(f"{(indr/nRecordingsThisSite):.0%} complete")
+            
+    eventLockedLFP = signal.filtfilt(bCoeff, aCoeff, eventLockedLFP, axis=0)
+
+    return channelStimEachTrial,eventLockedLFP
+
+
 # if __name__ == '__main__':
 
 nChannels = 32
 sampleRate = 30000
+downsampleRate = 30000
+ISI = 1.5
+downFactor = sampleRate//downsampleRate
+
 timeRange = [-0.5,1.5]
-sampleRange = [int(t*sampleRate) for t in timeRange]
-timeVec = np.arange(sampleRange[0], sampleRange[1])/sampleRate
+sampleRange = [int(t*downsampleRate)+1 for t in timeRange]
+timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
 nSamplesToExtract = sampleRange[1]-sampleRange[0]
-highcut = 300
-bCoeff, aCoeff = signal.iirfilter(4, Wn=highcut, fs=sampleRate, btype="low", ftype="butter")
 
 ### get data filenames ###
-edataFilenames = list(dataRoot.glob(f"**/*{subject}*.rhs"))
+edataFilenames = list(dataRoot.glob(f"**/*{subject}_{date}*/"))
 bdataFilenames = list(dataRoot.glob(f"**/{subject}_stim_logs/*.csv"))
 
 ### get ephys times ###
-ephysTimes = [str(f)[-10:-4] for f in edataFilenames]
+ephysTimes = [str(f).split('_')[-1] for f in edataFilenames]
 sortedEphysTimes = sorted(ephysTimes)
 sortedEphysFiles = [edataFilenames[i] for i in np.argsort(ephysTimes)]
 
@@ -67,34 +107,64 @@ bdataAll = pd.concat([df for df in bdataAll if len(df) > 0])
 ### load edata ###
 recordingsEachSite = {}
 concatEdataEachSite = {}
-streamNames = ['RHS2000 amplifier channel', 'DC Amplifier channel', 'Stim channel']
-streamKeys = {'RHS2000 amplifier channel':'amp','DC Amplifier channel':'dc','Stim channel':'stim'}
+streamNames = ['RHS2000 amplifier channel', 
+            #    'DC Amplifier channel', 
+               'Stim channel']
+streamKeys = {'RHS2000 amplifier channel':'amp',
+            #   'DC Amplifier channel':'dc',
+              'Stim channel':'stim'}
+
 for site in edataToUse:
     startInd = sortedEphysTimes.index(edataToUse[site][0])
     stopInd = sortedEphysTimes.index(edataToUse[site][1])
-    recordingsEachSite[site] = [{streamKeys[stream]:se.read_intan(f,stream_name=stream) for stream in streamNames} for f in sortedEphysFiles[startInd:stopInd+1]] 
-    # concatEdataEachSite[site] = si.concatenate_recordings([se.read_intan(str(f)) for f in sortedEphysFiles[startInd:stopInd+1]])
-    # concatEdataEachSite[site] = {streamKeys[stream]:si.concatenate_recordings(recordingsEachSite[site][stream]) for stream in streamNames}
+    recordingsEachSite[site] = []
+    for f in sortedEphysFiles[startInd:stopInd+1]:
+        recordingThisFile = {}
+
+        for stream in streamNames:
+            recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(f,stream_name=stream)
+
+            if downFactor > 1 and stream != "Stim Channel":
+                recordingThisFile[streamKeys[stream]] = sp.resample(sp.unsigned_to_signed(recordingThisFile[streamKeys[stream]]),downsampleRate)
+
+        recordingsEachSite[site].append(recordingThisFile)
+
+    channelStimEachTrial,eventLockedLFP = get_events_and_LFPs(recordingsEachSite)
+
+    # eventLockedLFP = np.empty((0,nSamplesToExtract,nChannels),dtype=np.int16)
+
+    # ### get traces ###
+    # nRecordingsThisSite = len(recordingsEachSite[site])
+    # print(f'---- loading traces for {site} ----')
+    # for indr,recording in enumerate(recordingsEachSite[site]):
+    # # for indr,recording in enumerate(recordingsEachSite[site][:1]):
+    #     # data, stims = [signal.decimate(recording[stream].get_traces(),downFactor,axis=0) for stream in recording]
+    #     data, stims = [recording[stream].get_traces() for stream in recording]
+
+    #     stims = np.argmax(np.hstack([stims**2, np.ones((stims.shape[0],1))]),axis=1) - 32
+
+    #     stimInds = np.nonzero(stims)[0]
+    #     stimOnsetInds = np.concat([stimInds[:1],stimInds[1:][(np.diff(stimInds) > ISI*sampleRate)]])//downFactor
+        
+
+    #     nTrials = len(stimOnsetInds)
+
+    #     currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)
+
+    #     for indt, evSample in enumerate(stimOnsetInds):
+    #         if evSample + sampleRange[0] < 0:
+    #             break
+    #         currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
+
+    #     del data
+
+    #     eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
+
+    #     if indr%(nRecordingsThisSite//19) == 0:
+    #         print(f"{(indr/nRecordingsThisSite):.0%} complete")
 
 
-    eventLockedLFP = np.empty((0,nSamplesToExtract,nChannels),dtype=np.int16)
-    ### get traces ###
-    for recording in recordingsEachSite[site]:
-        data, dc, stims = [recording[stream].get_traces() for stream in recording]
-
-        stimOnsetInds = np.nonzero(np.argmax(stims,axis=1))[0]
-        nTrials = len(stimOnsetInds)
-
-        currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)
-
-        for indt, evSample in enumerate(stimOnsetInds):
-            currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
-
-        eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
-            
-
-
-    eventlockedLFP = signal.filtfilt(bCoeff, aCoeff, eventlockedLFP, axis=0)
+    # eventLockedLFP = signal.filtfilt(bCoeff, aCoeff, eventLockedLFP, axis=0)
         
 
 
