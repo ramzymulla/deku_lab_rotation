@@ -96,7 +96,8 @@ def main():
     nTrialsEachComb = 5
 
     # Initialize CSV Log File
-    start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    launch_time_dt = datetime.now()
+    launch_time_str = launch_time_dt.strftime("%Y%m%d_%H%M%S")
     if not os.path.exists('stim_logs'):
         os.mkdir('stim_logs')
     log_filename = os.path.join(f"stim_logs",f"single_channel_stim_log_{start_time_str}.csv")
@@ -105,7 +106,7 @@ def main():
         csv_writer = csv.writer(log_file)
         # Write CSV Header
         csv_writer.writerow([
-             'Channel', 'Timestamp', 'Waveform', 
+             'Date_Time', 'Channel', 'Timestamp', 'Waveform', 
             'Base_Amp_uA', 'Freq_Hz', 'Train_Dur_ms', 
             'Phase_1_us', 'Interphase_Delay_us', 'Phase_2_us'
         ])
@@ -176,9 +177,10 @@ def main():
                                 trialsCtr += 1
                                 current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
                                 s.sendall(f"execute ManualStimTriggerPulse f{chanInd+1};".encode('utf-8'))
+                                lastStimTime = 
 
                                 # 4. Log the exact execution time and parameters
-                                exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                                exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                                 csv_writer.writerow([
                                     channelSet[chanInd], exec_time, waveform['name'], 
                                     base_amp, freq, train_dur_ms, p1_dur, ip_delay, p2_dur

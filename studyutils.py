@@ -9,7 +9,6 @@ import spikeinterface.preprocessing as sp
 from pathlib import Path
 from scipy.ndimage import gaussian_filter1d
 import pywt
-from matplotlib_scalebar.scalebar import ScaleBar
 import studyparams
 
 
@@ -45,8 +44,8 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
         stims = np.argmax(np.hstack([stims**2, np.ones((stims.shape[0],1))]),axis=1) - 32
 
         if np.sum(stims) == 0:
-
-            ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the bdata timestamps ###
+            
+            # ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the bdata timestamps ###
             indt = indr*nTrialsEachBlock
             stimTimes = bdata[indt:indt+40]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
                                                                             - datetime(1900,1,1)).total_seconds()).values
@@ -54,6 +53,18 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
             stimTimes = ((30 + stimTimes - stimTimes[0]))
             stimChans = bdata[indt:indt+40]['Channel'].apply(lambda x: int(x[2:])).values
             stimOnsetInds = (sampleRate*stimTimes).astype(int)//downFactor
+
+            dc = recording['dc'].get_traces()
+            sumDC = np.sum(dc,axis=1)
+            medsumDC = np.median(sumDC)
+            stimOnsetInds = np.nonzero((sumDC>1.01*medsumDC))
+            if len(stimOnsetInds) != 40:
+                for prop in np.linspace(1,1.1,500)[1:]:
+                    stimOnsetInds = np.nonzero((sumDC>prop*medsumDC))
+                    if len(stimOnsetInds) == 40:
+                        break
+                    print(prop)
+
 
         else:
             stimInds = np.nonzero(stims)[0]
