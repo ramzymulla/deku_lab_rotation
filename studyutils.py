@@ -19,9 +19,6 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
                           downFactor = 1,
                           ISI = 1.5,
                           nChannels = 32):
-    
-    if downFactor ==1:
-        bCoeff, aCoeff = signal.iirfilter(4, Wn=highcut, fs=downsampleRate, btype="low", ftype="butter")
 
     downsampleRate = sampleRate//downFactor ################################
     sampleRange = [1+int(t*downsampleRate) for t in timeRange]
@@ -41,9 +38,8 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
     for indr,recording in enumerate(recordingsEachSite[site]):
         stims = recording['stim'].get_traces()
         nChannels = stims.shape[1]
-        stims = np.argmax(np.hstack([stims**2, np.ones((stims.shape[0],1))]),axis=1) - 32
-
-        if np.sum(stims) == 0:
+        
+        if np.sum(np.abs(stims)) == 0:
             
             # ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the bdata timestamps ###
             indt = indr*nTrialsEachBlock
@@ -52,21 +48,23 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
             
             stimTimes = ((30 + stimTimes - stimTimes[0]))
             stimChans = bdata[indt:indt+40]['Channel'].apply(lambda x: int(x[2:])).values
-            stimOnsetInds = (sampleRate*stimTimes).astype(int)//downFactor
+            stimOnsetInds1 = (sampleRate*stimTimes).astype(int)//downFactor
 
             dc = recording['dc'].get_traces()
             sumDC = np.sum(dc,axis=1)
             medsumDC = np.median(sumDC)
-            stimOnsetInds = np.nonzero((sumDC>1.01*medsumDC))
+            prop=1.01
+            stimOnsetInds = np.nonzero((sumDC>prop*medsumDC))[0]//downFactor
+            
+            
             if len(stimOnsetInds) != 40:
-                for prop in np.linspace(1,1.1,500)[1:]:
-                    stimOnsetInds = np.nonzero((sumDC>prop*medsumDC))
+                for prop in np.linspace(1,np.max(sumDC)/np.median(sumDC),500)[1:]:
+                    stimOnsetInds = np.nonzero((sumDC>prop*medsumDC))[0]//downFactor
                     if len(stimOnsetInds) == 40:
                         break
-                    print(prop)
-
-
+                    
         else:
+            stims = np.argmax(np.hstack([np.abs(stims), np.ones((stims.shape[0],1))]),axis=1) - 32
             stimInds = np.nonzero(stims)[0]
             stimOnsetInds = np.concat([stimInds[:1],stimInds[1:][(np.diff(stimInds) > 0.5*ISI*sampleRate)]])//downFactor
             stimChans = stims[stimOnsetInds*downFactor]+32
@@ -79,7 +77,7 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
         currStimDur = bdata['Train_Dur_ms'][indr*nTrialsEachBlock]
 
         if nTrials !=40:
-            print(f"Error, {nTrials} stims detected for recording #{indr} ({edataFilesToUse[indr].name})")
+            print(f"Error, {nTrials} stims detected for recording #{indr} ({recording['amp'].name})")
             continue
 
         currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)

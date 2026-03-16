@@ -177,7 +177,7 @@ if __name__ == '__main__':
 
 
         
-        if MAKEFIGS and 0:
+        if MAKEFIGS and 1:
             print('---- separating into LFP bands ----')
             ### extract LFP bands ###
             bandedBaselines = [extract_lfp_bands(baselineEachBlock[block,:,:],downsampleRate) for block in range(nBlocks)]
