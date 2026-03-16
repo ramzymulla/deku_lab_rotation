@@ -1,20 +1,46 @@
 import sys
 import os
-import csv
 import spikeinterface.core as si
 import spikeinterface.extractors as se
 import spikeinterface.preprocessing as sp
+from matplotlib import use
 from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy import signal
-import time
 import studyparams
+from studyutils import *
 import matplotlib.pyplot as plt
+
+
+
+LOAD = False
+SAVEDAT = False
+MAKEFIGS = False
+
+for arg in sys.argv:
+    if arg == 'load':
+        LOAD = True
+    elif arg == 'savedat':
+        SAVEDAT = True
+    elif arg == 'makefigs':
+        MAKEFIGS = True
+        use('agg')
 
 subject = 'FD006'
 date = '260311'
 dataRoot = Path(studyparams.DATA_PATH)
+outDir = studyparams.OUTPUT_PATH
+if not os.path.exists(outDir):
+    os.mkdir(outDir)
+
+processedDataPath = os.path.join(outDir,"FigData")
+if not os.path.exists(processedDataPath):
+    os.mkdir(processedDataPath)
+
+mpd_graphsDir = os.path.join(outDir,'multiband_donut_figs')
+if not os.path.exists(mpd_graphsDir):
+    os.mkdir(mpd_graphsDir)
 
 nonStimEdata = {
     'lidocaine1'    :   '183148',
@@ -31,105 +57,261 @@ bdataToUse = {
     # 'site2'     :   ''
 }
 
-def get_events_and_LFPs(recordingsEachSite, 
-                          timeRange = [-0.5,1.5], 
-                          highcut = 300, 
-                          sampleRate = 30000,
-                          downFactor = 1):
+bandsToUse = ['Delta','Theta','Alpha','Beta','Low_Gamma','High_Gamma','HFO']
+saveDatFilename = {site:os.path.join(processedDataPath,f"{subject}_{date}_{site}_processed.hdf") for site in edataToUse}
 
-    downsampleRate = sampleRate//downFactor
-    sampleRange = [1+int(t*downsampleRate) for t in timeRange]
+if __name__ == '__main__':
+
+    nChannels = 32
+    sampleRate = 30000
+    downsampleRate = 1000
+    ISI = 1.5
+    downFactor = sampleRate//downsampleRate
+    highcut = 300
+    nStimChansEachBlock = 8
+
+    timeRange = [-1,2]
+    sampleRange = [int(t*downsampleRate)+1 for t in timeRange]
+    timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
     nSamplesToExtract = sampleRange[1]-sampleRange[0]
 
-    bCoeff, aCoeff = signal.iirfilter(4, Wn=highcut, fs=downsampleRate, btype="low", ftype="butter")
+    ### get data filenames ###
+    edataFilenames = list(dataRoot.glob(f"**/*{subject}_{date}*/"))
+    bdataFilenames = {site:list(dataRoot.glob(f"**/{subject}_stim_logs/*{bdataToUse[site]}.csv")) for site in bdataToUse}
 
-    eventLockedLFP = np.empty((0,nSamplesToExtract,nChannels),dtype=np.int16)
+    ### get ephys times ###
+    ephysTimes = [str(f).split('_')[-1] for f in edataFilenames]
+    sortedEphysTimes = sorted(ephysTimes)
+    sortedEphysFiles = [edataFilenames[i] for i in np.argsort(ephysTimes)]
 
-    ### get traces ###
-    nRecordingsThisSite = len(recordingsEachSite[site])
-    channelStimEachTrial = []
-    print(f'---- loading traces for {site} ----')
-    for indr,recording in enumerate(recordingsEachSite[site]):
-        data, stims = [recording[stream].get_traces() for stream in recording]
+    ### load bdata ###
+    bdataAll = {}
+    for site in bdataFilenames:
+        dfs = [pd.read_csv(f) for f in sorted(bdataFilenames[site])]
+        bdataAll[site] = pd.concat([df for df in dfs if len(df) > 0])
 
-        stims = np.argmax(np.hstack([stims**2, np.ones((stims.shape[0],1))]),axis=1) - 32
+    ### load edata ###
+    recordingsEachSite = {}
+    concatEdataEachSite = {}
+    streamNames = ['RHS2000 amplifier channel', 
+                'DC Amplifier channel', 
+                'Stim channel']
+    streamKeys = {'RHS2000 amplifier channel':'amp',
+                'DC Amplifier channel':'dc',
+                'Stim channel':'stim'}
 
-        stimInds = np.nonzero(stims)[0]
-        stimOnsetInds = np.concat([stimInds[:1],stimInds[1:][(np.diff(stimInds) > ISI*sampleRate)]])//downFactor
-        channelStimEachTrial.extend(stims[stimOnsetInds])
+    for site in edataToUse:
+        startInd = sortedEphysTimes.index(edataToUse[site][0])
+        stopInd = sortedEphysTimes.index(edataToUse[site][1])
+        recordingsEachSite[site] = []
+        bdata = bdataAll[site]
+        edataFilesToUse = sortedEphysFiles[startInd:stopInd+1]
+        for f in edataFilesToUse:
+            recordingThisFile = {}
+
+            for stream in streamNames:
+                recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(f,stream_name=stream)
+
+                if downFactor > 1 and stream == "RHS2000 amplifier channel":
+                    recordingThisFile[streamKeys[stream]] = sp.resample(sp.unsigned_to_signed(recordingThisFile[streamKeys[stream]]),downsampleRate)
+
+            recordingsEachSite[site].append(recordingThisFile)
+
+        ### get events and LFPs ### 
+        print(f'---- loading events and LFP for {site} ----')
+        if LOAD and os.path.exists(saveDatFilename[site]):
+            channelStimEachBlock,eventLockedLFP,baselineEachBlock = [np.stack(list(series),axis=0) for _,series in pd.read_hdf(saveDatFilename[site]).items()]
+            channelStimEachTrial = channelStimEachBlock.flatten()
+        else:
+            channelStimEachTrial,eventLockedLFP,baselineEachBlock = get_events_and_LFPs(recordingsEachSite,
+                                                                                        site,
+                                                                                        bdataAll[site],
+                                                                                        timeRange=timeRange,
+                                                                                        downFactor=downFactor)
+            
+            channelStimEachBlock = channelStimEachTrial.reshape(-1,eventLockedLFP.shape[1])
+
+        print('---- done extracting events and LFP ----')
+        nBlocks,nTrialsEachBlock,nChannels,nSamples = eventLockedLFP.shape
+
+        
+        ### sort by channel stim ###
+        sortingIndsEachBlock = np.argsort(channelStimEachBlock,axis = 1)
+        sortedLFPs = np.array([eventLockedLFP[block,sortingIndsEachBlock[block],:,:] for block in range(nBlocks)])
+
+        donutChans = studyparams.DONUT_ORDER
         
 
-        nTrials = len(stimOnsetInds)
+        ### combine stim channels to show all 16 ###
+        combinedSortedLFPs = sortedLFPs.reshape(sortedLFPs.shape[0]//2,sortedLFPs.shape[1]*2,*sortedLFPs.shape[2:])
 
-        currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)
 
-        for indt, evSample in enumerate(stimOnsetInds):
-            if evSample + sampleRange[0] < 0:
-                break
-            currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
+        if MAKEFIGS and 1:
+            print("---- plotting spectral power densities ----")
+            SPDdir = os.path.join(outDir,'SpectralPowerDonut')
+            BPdir = os.path.join(outDir,'BroadbandPowerDonut')
+            if not os.path.exists(SPDdir):
+                os.mkdir(SPDdir)
+            if not os.path.exists(BPdir):
+                os.mkdir(BPdir)
 
-        eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
+            for block in range(32):
+                currStimParams = bdataAll[site].iloc[block*combinedSortedLFPs.shape[1]]
+                stimDur = currStimParams['Train_Dur_ms']/1000
 
-        if (100*indr/nRecordingsThisSite)%5 == 0:
-            print(f"{(indr/nRecordingsThisSite):.0%} complete")
+                freqs,dataToPlot,fig,ax = plot_power_spectra(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[0,200],nperseg=500)
+                suptitleStr = f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" 
+                fig.suptitle(suptitleStr,fontsize=24, fontweight='bold');
+                filename = f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_spectral_power.png"
+                fig.savefig(os.path.join(SPDdir,filename),format='png',transparent=True);
+                plt.close();
+        
+
+
+                freqs,dataToPlot,fig,ax = plot_broadband_power(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[0,200])
+                suptitleStr = f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" 
+                fig.suptitle(suptitleStr,fontsize=24, fontweight='bold');
+                filename = f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_broadband_power.png"
+                fig.savefig(os.path.join(BPdir,filename),format='png',transparent=True);
+                plt.close();
+
+
+        
+        if MAKEFIGS and 0:
+            print('---- separating into LFP bands ----')
+            ### extract LFP bands ###
+            bandedBaselines = [extract_lfp_bands(baselineEachBlock[block,:,:],downsampleRate) for block in range(nBlocks)]
+            bandedLFPs = [extract_lfp_bands(sortedLFPs[block,:,:,:],downsampleRate) for block in range(nBlocks)]
+            # for band in bandedLFPs:
+            #     avgBL = np.mean(bandedBaselines[band],axis=1)
+            #     bandedLFPs[band] = np.prod([bandedLFPs,avgBL],axis=)
             
-    eventLockedLFP = signal.filtfilt(bCoeff, aCoeff, eventLockedLFP, axis=0)
 
-    return channelStimEachTrial,eventLockedLFP
+            print('---- calculating average bandedLFPs ----')
+            ### average by stim type ###
+            avgBandedLFPs = [{band:np.zeros((nStimChansEachBlock,*eventLockedLFP.shape[2:])) for band in bandedLFPs[block]} for block in range(nBlocks)]
+            # avgBandedBaselines = [{band:np.zeros((nStimChansEachBlock,*eventLockedLFP.shape[2:])}]
+            for block,spectra in enumerate(bandedLFPs):
+                for band in spectra:
+                    lfp = spectra[band]
+                    for chan in range(8):
+                        avgBandedLFPs[block][band][chan,:,:] = np.mean(lfp[chan*5:chan*5+5,:,:],axis=0)
+            print('---- extracting spectral power ----')
+            bandPowerEachBlock = []
+            avgBandPowerEachBlock = []
+            baselinePowerEachBlock = []
+            for block in range(64):
+                if block%2==0:
+                    shankChans = studyparams.SHANK_ORDER[::2]
+                    chanDepths = studyparams.SHANK_DEPTHS[site][::2]
+                else:
+                    shankChans = studyparams.SHANK_ORDER[1::2]
+                    chanDepths = studyparams.SHANK_DEPTHS[site][1::2]
+
+                currStimParams = bdataAll[site].iloc[block*40]
+                blockDir = os.path.join(mpd_graphsDir,f"{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA")
+                if MAKEFIGS and (not os.path.exists(blockDir)):
+                    os.mkdir(blockDir)
+
+                # bandedLFPs[block] = {band:np.transpose(bandedLFPs[block][band],axes=[0,2,1]) for band in bandedLFPs[block]}         # reshape to (nTrials,nChannels,nSamples)
+                bandPowerEachBlock.append({band:np.zeros_like(bandedLFPs[block][band]) for band in bandedLFPs[block]})              # shape (nTrials,nChannels,nSamples)
+                avgBandPowerEachBlock.append({band:np.zeros_like(avgBandedLFPs[block][band]) for band in avgBandedLFPs[block]})     # shape (nStimChansEachBlock,nChannels,nSamples)
+                baselinePowerEachBlock.append({band:np.zeros_like(bandedBaselines[block][band]) for band in bandedBaselines[block]})    # shape (nChannels,nSamplesBaseline)
+                for stimChan in range(nStimChansEachBlock):
+                    for band in bandedLFPs[block]:
+                        bandPowerEachBlock[block][band][5*stimChan: 5*stimChan + 5,:,:] = np.abs(signal.hilbert(bandedLFPs[block][band][stimChan,:,:]))
+                        avgBandPowerEachBlock[block][band][stimChan,:,:] = np.mean(bandPowerEachBlock[block][band][5*stimChan: 5*stimChan + 5,:,:],axis=0)
+                        baselinePowerEachBlock[block][band] = np.abs(signal.hilbert(bandedBaselines[block][band]))
+
+                    # plot_radial_multiband_power({band:np.abs(signal.hilbert(avgBandedLFPs[block][band][stimChan,donutChans.flatten(),:].reshape(2,8,-1))) for band in bandsToUse},timeVec)
+                    
+                    
+                    fig = plot_radial_multiband_power({band:avgBandPowerEachBlock[block][band][stimChan,donutChans.flatten(),:].reshape(*donutChans.shape,-1) for band in bandsToUse},
+                                                timeVec);
+
+                    # fig = plot_radial_multiband_power({band:avgBandPowerEachBlock[block][band][stimChan,donutChans.flatten(),:].reshape(*donutChans.shape,-1) for band in bandsToUse},
+                    #                             timeVec, baselineDict={band:baselinePowerEachBlock[block][band][stimChan,donutChans.flatten()].reshape(*donutChans.shape,-1) for band in bandsToUse});
+                    
+                    plt.gca();
+                    suptitleStr = f"Stim: {shankChans[stimChan]} ({chanDepths[stimChan]} um from pia), {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" 
+                    fig.suptitle(suptitleStr,fontsize=24, fontweight='bold');
+                    # fig.subplots_adjust(hspace=0.4)
+                    filename = f"{chanDepths[stimChan]:04d}um_channel{shankChans[stimChan]:02d}_multiband_power_block{block}.png"
+                    fig.savefig(os.path.join(blockDir,filename),format='png',transparent=True);
+                    plt.close();
+
+                if block%10 ==0:
+                    print(f"plotting block {block}/{nBlocks}")
+
+        if SAVEDAT:
+                pd.DataFrame({
+                    'channelStimsEachBlock': [channelStimEachBlock[block,:] for block in range(nBlocks)],
+                    'lfpEachBlock': [eventLockedLFP[block,:,:,:] for block in range(nBlocks)],
+                    'baselineEachBlock': [baselineEachBlock[block,:,:] for block in range(nBlocks)]
+                }, dtype=object).to_hdf(saveDatFilename[site],key='df',complevel=4)
+            
 
 
-# if __name__ == '__main__':
+    # downsampleRate = sampleRate//downFactor
+    # sampleRange = [1+int(t*downsampleRate) for t in timeRange]
+    # nSamplesToExtract = sampleRange[1]-sampleRange[0]
 
-nChannels = 32
-sampleRate = 30000
-downsampleRate = 30000
-ISI = 1.5
-downFactor = sampleRate//downsampleRate
+    # bCoeff, aCoeff = signal.iirfilter(4, Wn=highcut, fs=downsampleRate, btype="low", ftype="butter")
 
-timeRange = [-0.5,1.5]
-sampleRange = [int(t*downsampleRate)+1 for t in timeRange]
-timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
-nSamplesToExtract = sampleRange[1]-sampleRange[0]
+    # eventLockedLFP = np.empty((0,nSamplesToExtract,nChannels),dtype=np.int16)
+    # channelStimEachTrial = []
 
-### get data filenames ###
-edataFilenames = list(dataRoot.glob(f"**/*{subject}_{date}*/"))
-bdataFilenames = list(dataRoot.glob(f"**/{subject}_stim_logs/*.csv"))
+    # ### get traces ###
+    # nRecordingsThisSite = len(recordingsEachSite[site])
+    
+    # print(f'---- loading events and LFP for {site} ----')
+    # for indr,recording in enumerate(recordingsEachSite[site]):
+    #     stims = recording['stim'].get_traces()
+    #     nChannels = stims.shape[1]
+    #     stims = np.argmax(np.hstack([stims**2, np.ones((stims.shape[0],1))]),axis=1) - 32
 
-### get ephys times ###
-ephysTimes = [str(f).split('_')[-1] for f in edataFilenames]
-sortedEphysTimes = sorted(ephysTimes)
-sortedEphysFiles = [edataFilenames[i] for i in np.argsort(ephysTimes)]
+    #     if np.sum(stims) == 0:
 
-### load bdata ###
-bdataAll = [pd.read_csv(f) for f in bdataFilenames]
-bdataAll = pd.concat([df for df in bdataAll if len(df) > 0])
+    #         ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the bdata timestamps ###
+    #         indt = eventLockedLFP.shape[0]
+    #         stimTimes = bdata[indt:indt+40]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
+    #                                                                         - datetime(1900,1,1)).total_seconds()).values
+            
+    #         stimTimes = ((30 + stimTimes - stimTimes[0]))
+    #         stimChans = bdata[indt:indt+40]['Channel'].apply(lambda x: int(x[2:])).values
+    #         stimOnsetInds = (downsampleRate*stimTimes).astype(int)
 
-### load edata ###
-recordingsEachSite = {}
-concatEdataEachSite = {}
-streamNames = ['RHS2000 amplifier channel', 
-            #    'DC Amplifier channel', 
-               'Stim channel']
-streamKeys = {'RHS2000 amplifier channel':'amp',
-            #   'DC Amplifier channel':'dc',
-              'Stim channel':'stim'}
+    #     else:
+    #         stimInds = np.nonzero(stims)[0]
+    #         stimOnsetInds = np.concat([stimInds[:1],stimInds[1:][(np.diff(stimInds) > 0.5*ISI*sampleRate)]])//downFactor
+    #         stimChans = stims[stimOnsetInds]+32
 
-for site in edataToUse:
-    startInd = sortedEphysTimes.index(edataToUse[site][0])
-    stopInd = sortedEphysTimes.index(edataToUse[site][1])
-    recordingsEachSite[site] = []
-    for f in sortedEphysFiles[startInd:stopInd+1]:
-        recordingThisFile = {}
 
-        for stream in streamNames:
-            recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(f,stream_name=stream)
+    #     channelStimEachTrial.extend(stimChans)
+    #     currStimDur = bdata['Train_Dur_ms'][eventLockedLFP.shape[0]]
 
-            if downFactor > 1 and stream != "Stim Channel":
-                recordingThisFile[streamKeys[stream]] = sp.resample(sp.unsigned_to_signed(recordingThisFile[streamKeys[stream]]),downsampleRate)
+    #     nTrials = len(stimOnsetInds)
+    #     if nTrials !=40:
+    #         print(f"Error, {nTrials} stims detected for recording #{indr} ({edataFilesToUse[indr].name})")
+    #         continue
 
-        recordingsEachSite[site].append(recordingThisFile)
+    #     currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)
 
-    channelStimEachTrial,eventLockedLFP = get_events_and_LFPs(recordingsEachSite)
+
+    #     data = sp.remove_artifacts(sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60),
+    #                                 stimOnsetInds,ms_before=25,ms_after=currStimDur).get_traces()
+
+    #     for indt, evSample in enumerate(stimOnsetInds):
+    #         if evSample + sampleRange[0] < 0:
+    #             break
+    #         currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
+
+    #     eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
+
+    #     if (indr)%10 == 0:
+    #         print(f"{indr}/{nRecordingsThisSite} recordings processed")
+    # print('done extracting events and LFP')
+    # eventLockedLFP = signal.filtfilt(bCoeff, aCoeff, eventLockedLFP, axis=0)
 
     # eventLockedLFP = np.empty((0,nSamplesToExtract,nChannels),dtype=np.int16)
 
