@@ -97,7 +97,7 @@ def main():
 
     # Initialize CSV Log File
     launch_time_dt = datetime.now()
-    launch_time_str = launch_time_dt.strftime("%Y%m%d_%H%M%S")
+    launch_time_str = launch_time_dt.strftime("%Y%m%d_%H%M%S.%f")
     if not os.path.exists('stim_logs'):
         os.mkdir('stim_logs')
     log_filename = os.path.join(f"stim_logs",f"single_channel_stim_log_{start_time_str}.csv")

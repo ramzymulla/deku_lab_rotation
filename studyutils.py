@@ -1,4 +1,6 @@
 import numpy as np
+import sys
+import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy import signal
@@ -10,6 +12,9 @@ from pathlib import Path
 from scipy.ndimage import gaussian_filter1d
 import pywt
 import studyparams
+import quantities as pq
+import neo
+from elephant.current_source_density import icsd,estimate_csd
 
 
 def get_events_and_LFPs(recordingsEachSite, site,bdata,
@@ -255,124 +260,6 @@ def plot_radial_multiband_power(power_dict, time_vector, stimDur=0.65,baselineDi
     return fig
         
 
-# def plot_radial_multiband_power(power_dict, time_vector, sigma=2, donutChans = studyparams.DONUT_ORDER,scalebar_y=None,scalebar_x=None):
-#     """
-#     Plots overlapping, smoothed peristimulus power for multiple LFP bands in a concentric layout.
-    
-#     Parameters:
-#     power_dict : dict
-#         Dictionary mapping band names to ndarrays of shape (2, 8, n_samples).
-#     time_vector : ndarray
-#         1D array of timepoints.
-#     sigma : float
-#         Standard deviation for the Gaussian kernel.
-#     """
-#     fig = plt.figure(figsize=(16, 16));
-    
-#     radii = [0.22, 0.42]
-#     rotAngle = -3*np.pi/8
-#     angles = np.linspace(rotAngle, rotAngle + 2 * np.pi, 8, endpoint=False)[::-1]
-    
-#     ax_width = 0.15
-#     ax_height = 0.12
-
-#     baselineEachChan = {band:np.zeros_like(donutChans,dtype=float) for band in power_dict}
-#     for band, data in power_dict.items():
-#         for ring_idx,_ in enumerate(radii):
-#             for angle_idx,_ in enumerate(angles):
-
-#                 power_dict[band][ring_idx,angle_idx,:] = 10*np.log10(data[ring_idx,angle_idx,:]/np.mean(data[ring_idx,angle_idx,(time_vector < -0.1)]))
-#                 baselineEachChan[band][ring_idx,angle_idx] = np.mean(power_dict[band][ring_idx,angle_idx,(time_vector < -0.1)])
-#                 # smoothed_data[band][ring_idx,angle_idx,:] -= np.mean(smoothed_data[band][ring_idx,angle_idx,(time_vector < -0.1)])
-    
-#     # Calculate global min and max across all smoothed bands for uniform scaling
-#     smoothed_data = {
-#         band: gaussian_filter1d(data, sigma=sigma, axis=2) 
-#         for band, data in power_dict.items()
-#     }
-
-
-    
-    
-#     # y_min = min(np.min(data) for data in smoothed_data.values())
-#     # y_max = max(np.max(data) for data in smoothed_data.values())
-
-#     # Extract scalars into lists and cast to native Python floats to prevent unit evaluation errors
-#     all_mins = [np.min(data) for data in smoothed_data.values()]
-#     all_maxs = [np.max(data) for data in smoothed_data.values()]
-#     min_bls = [np.min(data[:,:,((time_vector<0)|(time_vector>0.65))]) for data in smoothed_data.values()]
-#     # y_min = float(np.min(all_mins))
-#     y_min = float(np.min(min_bls))*0.9
-#     y_max = float(np.max(all_maxs))
-    
-#     colors = plt.cm.tab10(np.linspace(0, 1, len(power_dict)))
-    
-#     for ring_idx, r in enumerate(radii):
-#         for angle_idx, theta in enumerate(angles):
-#             x_center = 0.5 + r * np.cos(theta)
-#             y_center = 0.5 + r * np.sin(theta) - 0.02
-            
-#             left = x_center - ax_width / 2
-#             bottom = y_center - ax_height / 2
-            
-#             ax = fig.add_axes([left, bottom, ax_width, ax_height]);
-            
-#             for (band_name, data), color in zip(smoothed_data.items(), colors):
-#                 y_data = data[ring_idx, angle_idx, :]
-                
-#                 label = band_name if ring_idx == 0 and angle_idx == 0 else ""
-#                 ax.plot(time_vector, y_data, color=color, lw=1.5, label=label, clip_on=False);
-            
-#             ax.axvline(0, color='red', linestyle='--', lw=1);
-#             ax.set_ylim(y_min, y_max);
-#             ax.set_xlim(time_vector[0], time_vector[-1]);
-            
-#             ax.axis('off');
-#             plt.sca(ax);
-#             plt.title(donutChans[ring_idx][angle_idx],fontsize=18);
-
-#         # dx = time_vector.shape[0]/(time_vector[-1]-time_vector[0])
-#         # dy = y_max-y_min
-#         # scalebarx = ScaleBar(dx, "ms", length_fraction=0.1, location="lower right");
-#         # scalebary = ScaleBar(dy, r"% baseline", length_fraction=0.1, location="lower right", rotation=90);
-#         # fig.add_artist(scalebarx);
-#         # fig.add_artist(scalebary);
-
-#         # Scalebar Implementation
-#         scale_ax = fig.add_axes([0.85, 0.05, ax_width, ax_height])
-#         scale_ax.set_xlim(time_vector[0], time_vector[-1])
-#         scale_ax.set_ylim(y_min, y_max)
-#         scale_ax.axis('off')
-#         scaleAmount = 0.5
-        
-#         if scalebar_y is None:
-#             scalebar_y = (y_max - y_min) * scaleAmount
-
-#         if scalebar_x is None:
-#             scalebar_x = (time_vector[-1]-time_vector[0])*scaleAmount
-            
-#         x0 = time_vector[0]
-#         y0 = y_min
-        
-#         # Draw L-shape
-#         scale_ax.plot([x0, x0 + scalebar_x], [y0, y0], color='black', lw=8) 
-#         scale_ax.plot([x0, x0], [y0, y0 + scalebar_y], color='black', lw=8)
-        
-#         # Add text labels
-#         x_range = time_vector[-1] - time_vector[0]
-#         y_range = y_max - y_min
-#         scale_ax.text(np.round(x0 + scalebar_x / 2,2), np.round(y0 - y_range * 0.05,2), 
-#                       f"{scalebar_x:.1f} s", ha='center', va='top', fontsize=18, fontweight='bold')
-#         scale_ax.text(np.round(x0 - x_range * 0.05,2), np.round(y0 + scalebar_y / 2,2), 
-#                       f"{scalebar_y:.1f} dB", ha='right', va='center', rotation=90, fontsize=18, fontweight='bold')
-
-            
-#     leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
-#     plt.setp(leg.get_lines(),linewidth=4)
-
-#     # plt.show()
-#     return fig
-
 def make_donut_axes(figsize = (16,16), donutChans = studyparams.DONUT_ORDER,rotFactor=3):
 
     fig = plt.figure(figsize=figsize)
@@ -514,7 +401,7 @@ def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=5
     # Initialize with NaNs to prevent unallocated memory artifacts
     dataToPlot = np.full((nStimChans, nRecChans, nFreqs_plot), np.nan, dtype=float)
     
-    for inds, stimChan in enumerate(stimChanIndOrder):
+    for inds, stimChan in enumerate(stimChanIndOrder[::-1]):
         for indr, recChan in enumerate(recChanOrder):
             trial_slice = data[stimChan*5:stimChan*5 + 5, recChan, :]
             
@@ -530,10 +417,11 @@ def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=5
             safe_post = np.maximum(post_pwr[freq_mask], 1e-12)
             
             # Normalize to baseline (dB)
-            dataToPlot[-(inds+1), indr, :] = 10 * np.log10(safe_post / safe_baseline)
+            dataToPlot[inds, indr, :] = 10 * np.log10(safe_post / safe_baseline)
 
     # Symmetrically center limits around 0
-    abs_max = np.nanmax(np.abs(dataToPlot))
+    # abs_max = np.nanmax(np.abs(dataToPlot))
+    abs_max = 20
     vmin = -abs_max
     vmax = abs_max
     
@@ -595,7 +483,7 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
     
     dataToPlot = np.full((nStimChans, nRecChans, nSamples), np.nan, dtype=float)
     
-    for inds, stimChan in enumerate(stimChanIndOrder):
+    for inds, stimChan in enumerate(stimChanIndOrder[::-1]):
         for indr, recChan in enumerate(recChanOrder):
             trial_slice = data[stimChan*5:stimChan*5 + 5, recChan, :]
             evoked_response = np.mean(trial_slice, axis=0)
@@ -609,9 +497,10 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
             safe_baseline = np.maximum(baseline_mean, 1e-12)
             safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
             
-            dataToPlot[-(inds+1), indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
+            dataToPlot[inds, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
 
-    abs_max = np.nanmax(np.abs(dataToPlot[:,:,(timeVec>stimDur+0.05)]))
+    # abs_max = np.nanmax(np.abs(dataToPlot[:,:,(timeVec>stimDur+0.05)]))
+    abs_max = 15
     vmin = -abs_max
     vmax = abs_max
     
@@ -656,58 +545,6 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
         cb.ax.set_ylabel('Normalized Power (dB)', fontsize=24)
         
     return timeVec, dataToPlot, fig, axs
-
-
-# def plot_power_spectra(ax,data,baseline,timeVec,freqRange = [1.5,200],filter_order = 4, fs = 1000):
-    # if baseline.shape[0] != data.shape[0]:
-    #     baseline = baseline.T
-    # freqSpace = np.linspace(*freqRange,200)
-    # powerEachFreq = np.zeros_like(freqSpace)
-    # for indf,freq in enumerate(freqSpace[:-1]):
-    #     low,high = freq/(0.5*fs),freqSpace[indf+1]/(0.5*fs)
-    #     b,a = signal.butter(filter_order,[low,high],btype='band')
-    #     power = np.abs(signal.hilbert(signal.filtfilt(b,a,data,axis=-1)))
-    #     baselinePower = np.abs(signal.hilbert(signal.filtfilt(b,a,baseline,axis=-1)))
-    #     meanPower = np.mean(data,axis=0)
-    #     meanBaselinePower = np.mean(baselinePower)
-
-    #     try:
-    #         powerEachFreq[indf] = 10*np.log10(meanPower/meanBaselinePower)
-    #     except:
-    #         powerEachFreq[indf] = 0
-    # ax.plot(freqSpace,powerEachFreq,'-k')
-
-# def plot_power_spectra(ax, data, baseline, timeVec, freqRange=[1.5, 200], filter_order=4, fs=1000):
-#     if baseline.shape[0] != data.shape[0]:
-#         baseline = baseline.T
-
-#     # 200 edges creates 199 frequency bands
-#     freq_edges = np.linspace(freqRange[0], freqRange[1], 200)
-#     center_freqs = freq_edges[:-1] + np.diff(freq_edges) / 2
-#     powerEachFreq = np.zeros_like(center_freqs)
-    
-#     nyquist = 0.5 * fs
-    
-#     for indf in range(len(center_freqs)):
-#         low_hz = freq_edges[indf]
-#         high_hz = freq_edges[indf+1]
-        
-#         b, a = signal.butter(filter_order, [low_hz / nyquist, high_hz / nyquist], btype='band')
-        
-#         # Power requires squaring the Hilbert envelope
-#         power = np.abs(signal.hilbert(signal.filtfilt(b, a, data, axis=-1)))
-#         baselinePower = np.abs(signal.hilbert(signal.filtfilt(b, a, baseline, axis=-1)))
-        
-#         # Calculate scalar means (adjust axis parameter if you need channel-specific spectra)
-#         meanPower = np.mean(power)
-#         meanBaselinePower = np.mean(baselinePower)
-
-#         if meanBaselinePower > 0:
-#             powerEachFreq[indf] = 10 * np.log10(meanPower / meanBaselinePower)
-#         else:
-#             powerEachFreq[indf] = np.nan
-
-#     ax.plot(center_freqs, powerEachFreq, '-k')
     
 
 def extract_lfp_bands(lfp_data, fs, bands=studyparams.LFP_BANDS, filter_order=4):
@@ -745,67 +582,6 @@ def extract_lfp_bands(lfp_data, fs, bands=studyparams.LFP_BANDS, filter_order=4)
         filtered_signals[band_name] = signal.filtfilt(b, a, lfp_data, axis=1)
 
     return filtered_signals
-
-
-# def plot_radial_peristimulus_power(power_data, time_vector,chans = studyparams.DONUT_CHANS):
-#     """
-#     Plots peristimulus power timeseries for 16 channels in a concentric layout.
-    
-#     Parameters:
-#     power_data : ndarray
-#         Shape (2, 8, n_samples) representing (ring, angle_index, timepoints).
-#         Row 0 is the inner ring, Row 1 is the outer ring.
-#     time_vector : ndarray
-#         1D array of timepoints (e.g., from -0.5 to 1.5).
-#     """
-#     fig = plt.figure(figsize=(16, 16))
-    
-#     # Radii for inner and outer rings in normalized figure coordinates (0 to 1)
-#     # The figure center is at (0.5, 0.5)
-#     radii = [0.15, 0.35]
-#     rotAngle = -3*np.pi/8
-#     angles = np.linspace(rotAngle, rotAngle + 2 * np.pi, 8, endpoint=False)[::-1]
-    
-#     # Size of each individual subplot
-#     ax_width = 0.08
-#     ax_height = 0.08
-    
-#     # Global min and max for consistent y-axis scaling across all plots
-#     y_min, y_max = np.min(power_data), np.max(power_data)
-    
-#     for ring_idx, r in enumerate(radii):
-#         for angle_idx, theta in enumerate(angles):
-#             # Calculate center of the subplot
-#             x_center = 0.5 + r * np.cos(theta)
-#             y_center = 0.5 + r * np.sin(theta)
-            
-#             # Find bottom-left corner for add_axes
-#             left = x_center - ax_width / 2
-#             bottom = y_center - ax_height / 2
-            
-#             ax = fig.add_axes([left, bottom, ax_width, ax_height])
-            
-#             y_data = power_data[ring_idx, angle_idx, :]
-#             ax.plot(time_vector, y_data, color='black', lw=1)
-            
-#             # Mark stimulus onset
-#             ax.axvline(0, color='red', linestyle='--', lw=0.8) 
-#             ax.set_ylim(y_min, y_max)
-#             ax.set_xlim(time_vector[0], time_vector[-1])
-            
-#             # Hide ticks for a cleaner look, except for one reference plot
-#             if ring_idx == 1 and angle_idx == 0:
-#                 ax.set_xticks([-0.5, 0, 1.5])
-#                 ax.set_yticks([y_min, y_max])
-#                 ax.tick_params(axis='both', which='major', labelsize=8)
-#             else:
-#                 ax.set_xticks([])
-#                 ax.set_yticks([])
-#             plt.sca(ax)
-#             plt.title(donutChans[ring_idx][angle_idx])
-                
-#     # plt.show()
-
 
 def plot_radial_peristimulus_power(power_data, time_vector):
     """
@@ -858,3 +634,69 @@ def plot_radial_peristimulus_power(power_data, time_vector):
             plt.title(donutChans[ring_idx][angle_idx])
                 
     # plt.show()
+
+
+def compute_1d_csd(data, spacing,diam=500):
+    '''
+    compute 1d csd from spontaneous activity
+
+    Args:
+        data (ndarray): lfp data matrix (sorted by channel depth); shape (nChannels, nSamples)
+        spacing (int): electrode spacing (um)
+
+    Returns:
+        csd (ndarray): current source density; shape (nChannels,)
+    '''
+
+    csd = icsd.DeltaiCSD(data*1E-6*pq.V,
+                         spacing*np.arange(data.shape[0])*1e-6*pq.m,
+                         diam=diam*1e-6*pq.m)
+
+    return csd
+
+def plot_icsd(lfp_data,spacing,diam=500):
+
+    csd_obj = compute_1d_csd(lfp_data,spacing,diam)
+    lfp_data = lfp_data*1e-6*pq.V
+
+    fig, axes = plt.subplots(3,1, figsize=(8,8))
+
+    #plot LFP signal
+    ax = axes[0]
+    cbmax = np.percentile(abs(lfp_data),99)
+    im = ax.imshow(np.array(lfp_data), origin='upper', vmin=-cbmax, \
+              vmax=cbmax, cmap='RdBu_r', interpolation='nearest')
+    ax.axis(ax.axis('tight'))
+    cb = plt.colorbar(im, ax=ax)
+    cb.set_label('LFP (%s)' % lfp_data.dimensionality.string)
+    ax.set_xticklabels([])
+    ax.set_title('LFP')
+    ax.set_ylabel('ch #')
+
+    #plot raw csd estimate
+    csd = csd_obj.get_csd()
+    ax = axes[1]
+    cbmax = np.percentile(abs(csd),99)
+    im = ax.imshow(np.array(csd), origin='upper', vmin=-cbmax, \
+          vmax=cbmax, cmap='RdBu_r', interpolation='nearest')
+    ax.axis(ax.axis('tight'))
+    ax.set_title(csd_obj.name)
+    cb = plt.colorbar(im, ax=ax)
+    cb.set_label('CSD (%s)' % csd.dimensionality.string)
+    ax.set_xticklabels([])
+    ax.set_ylabel('ch #')
+
+    #plot spatially filtered csd estimate
+    ax = axes[2]
+    csd = csd_obj.filter_csd(csd)
+    cbmax = np.percentile(csd,99)
+    im = ax.imshow(np.array(csd), origin='upper', vmin=-cbmax, \
+          vmax=cbmax, cmap='RdBu_r', interpolation='nearest')
+    ax.axis(ax.axis('tight'))
+    ax.set_title(csd_obj.name + ', filtered')
+    cb = plt.colorbar(im, ax=ax)
+    cb.set_label('CSD (%s)' % csd.dimensionality.string)
+    ax.set_ylabel('ch #')
+    ax.set_xlabel('timestep')
+
+    return fig, axes

@@ -3,7 +3,7 @@ import os
 import spikeinterface.core as si
 import spikeinterface.extractors as se
 import spikeinterface.preprocessing as sp
-from matplotlib import use
+from matplotlib import use,rcParams
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -26,6 +26,12 @@ for arg in sys.argv:
     elif arg == 'makefigs':
         MAKEFIGS = True
         use('agg')
+        COLOR = 'white'  
+        rcParams['text.color'] = COLOR         # General text color
+        rcParams['axes.labelcolor'] = COLOR    # Axis label color
+        rcParams['xtick.color'] = COLOR        # X-axis tick color
+        rcParams['ytick.color'] = COLOR        # Y-axis tick color
+        rcParams['axes.edgecolor'] = COLOR
 
 subject = 'FD006'
 date = '260311'
@@ -106,16 +112,17 @@ if __name__ == '__main__':
         recordingsEachSite[site] = []
         bdata = bdataAll[site]
         edataFilesToUse = sortedEphysFiles[startInd:stopInd+1]
-        for f in edataFilesToUse:
-            recordingThisFile = {}
+        if not LOAD:
+            for f in edataFilesToUse:
+                recordingThisFile = {}
 
-            for stream in streamNames:
-                recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(f,stream_name=stream)
+                for stream in streamNames:
+                    recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(f,stream_name=stream)
 
-                if downFactor > 1 and stream == "RHS2000 amplifier channel":
-                    recordingThisFile[streamKeys[stream]] = sp.resample(sp.unsigned_to_signed(recordingThisFile[streamKeys[stream]]),downsampleRate)
+                    if downFactor > 1 and stream == "RHS2000 amplifier channel":
+                        recordingThisFile[streamKeys[stream]] = sp.resample(sp.unsigned_to_signed(recordingThisFile[streamKeys[stream]]),downsampleRate)
 
-            recordingsEachSite[site].append(recordingThisFile)
+                        recordingsEachSite[site].append(recordingThisFile)
 
         ### get events and LFPs ### 
         print(f'---- loading events and LFP for {site} ----')
@@ -129,7 +136,8 @@ if __name__ == '__main__':
                                                                                         timeRange=timeRange,
                                                                                         downFactor=downFactor)
             
-            channelStimEachBlock = channelStimEachTrial.reshape(-1,eventLockedLFP.shape[1])
+            channelStimEachBlock = channelStimEachTrial.reshape(eventLockedLFP.shape[:2])
+            # channelStimEachBlock = bdataAll[site]['Channel'].apply(lambda x: int(x[-2:])).reshape(eventLockedLFP.shape[:2])
 
         print('---- done extracting events and LFP ----')
         nBlocks,nTrialsEachBlock,nChannels,nSamples = eventLockedLFP.shape
@@ -168,16 +176,16 @@ if __name__ == '__main__':
         
 
 
-                freqs,dataToPlot,fig,ax = plot_broadband_power(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[0,200])
-                suptitleStr = f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" 
-                fig.suptitle(suptitleStr,fontsize=24, fontweight='bold');
-                filename = f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_broadband_power.png"
-                fig.savefig(os.path.join(BPdir,filename),format='png',transparent=True);
-                plt.close();
+                # freqs,dataToPlot,fig,ax = plot_broadband_power(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[0,200])
+                # suptitleStr = f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" 
+                # fig.suptitle(suptitleStr,fontsize=24, fontweight='bold');
+                # filename = f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_broadband_power.png"
+                # fig.savefig(os.path.join(BPdir,filename),format='png',transparent=True);
+                # plt.close();
 
 
         
-        if MAKEFIGS and 1:
+        if MAKEFIGS and 0:
             print('---- separating into LFP bands ----')
             ### extract LFP bands ###
             bandedBaselines = [extract_lfp_bands(baselineEachBlock[block,:,:],downsampleRate) for block in range(nBlocks)]
