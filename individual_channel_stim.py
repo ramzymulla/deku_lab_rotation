@@ -20,7 +20,7 @@ RHX_PORT = 5000
 # ==========================================
 # 2. Timing & Parameter Space
 # ==========================================
-ISI_BASE = 2.0        
+ISI_BASE = 2.5        
 ISI_JITTER = 0.5      
 
 baselineDuration = 0.5        # minutes of baseline before stim
@@ -43,15 +43,15 @@ WAVEFORMS = [
         'name': 'Symmetric Biphasic Cathodic-First Pulse Train',
         'polarity': 'NegativeFirst',
         'pulseWidths': [[200, 40, 200]],             
-        'amplitudes': ampsToUse,         
-        'frequencies': [160,320],                           
-        'pulseDurations': [250,650]                         
+        'amplitudes': [1,2,4,8,0],         
+        'frequencies': [320],                           
+        'pulseDurations': [650]                         
     },
     {
         'name': 'Symmetric Biphasic Cathodic-First Single Pulse',
         'polarity': 'NegativeFirst',
         'pulseWidths': [[200, 100, 200]],             
-        'amplitudes': [0,10,20,40,80,100],
+        'amplitudes': [10,20,40,80,0],
         'frequencies': [1],                           
         'pulseDurations': [1]                                        
     }
@@ -96,8 +96,8 @@ def main():
     nTrialsEachComb = 5
 
     # Initialize CSV Log File
-    launch_time_dt = datetime.now()
-    launch_time_str = launch_time_dt.strftime("%Y%m%d_%H%M%S.%f")
+    start_time_dt = datetime.now()
+    start_time_str = start_time_dt.strftime("%Y%m%d_%H%M%S.%f")
     if not os.path.exists('stim_logs'):
         os.mkdir('stim_logs')
     log_filename = os.path.join(f"stim_logs",f"single_channel_stim_log_{start_time_str}.csv")
@@ -177,7 +177,7 @@ def main():
                                 trialsCtr += 1
                                 current_isi = ISI_BASE + random.uniform(0, ISI_JITTER)
                                 s.sendall(f"execute ManualStimTriggerPulse f{chanInd+1};".encode('utf-8'))
-                                lastStimTime = 
+                                 
 
                                 # 4. Log the exact execution time and parameters
                                 exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")

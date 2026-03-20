@@ -465,8 +465,39 @@ def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=5
         
     return plot_freqs, dataToPlot, fig, ax
 
+def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000):
+    """
+    Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time.
+    """
+    nTrials, nRecChans, nSamples = data.shape
+    nStimChans = len(studyparams.SHANK_ORDER)
+    stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
+    
+    target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
+    scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
+    
+    baseline_mask = (timeVec >= -1.0) & (timeVec < 0.0)
+    
+    bbpwr = np.full((nTrials, nRecChans, nSamples), np.nan, dtype=float)
+    
+    for indt in range(nTrials):
+        for indr, recChan in enumerate(range(nRecChans)):
+            evoked_response = data[indt,recChan,:]
+            
+            coefs, _ = pywt.cwt(evoked_response, scales, 'cmor1.5-1.0', sampling_period=1/fs)
+            pwr = np.abs(coefs)**2
+            
+            broadband_pwr = np.mean(pwr, axis=0)
+            
+            baseline_mean = np.mean(broadband_pwr[baseline_mask])
+            safe_baseline = np.maximum(baseline_mean, 1e-12)
+            safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
+            
+            bbpwr[indt, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
 
-def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperseg=500, fs=1000, shankDepths=studyparams.SHANK_DEPTHS['site1']):
+    return bbpwr
+
+def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000, shankDepths=studyparams.SHANK_DEPTHS['site1']):
     """
     Calculates and plots the baseline-normalized, stimulus-evoked LFP broadband power over time.
     """
@@ -476,7 +507,7 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
     recChanOrder = studyparams.DONUT_ORDER.flatten()
     nRecChans = len(recChanOrder)
     
-    target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], 40)
+    target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
     scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
     
     baseline_mask = (timeVec >= -1.0) & (timeVec < 0.0)
@@ -700,3 +731,50 @@ def plot_icsd(lfp_data,spacing,diam=500):
     ax.set_xlabel('timestep')
 
     return fig, axes
+
+def estimate_layers(data,spacing=100,diam=40):
+
+    ### get csd ###
+    csd_obj = compute_1d_csd(data,spacing,diam)
+    csd = csd_obj.filter_csd(csd_obj.get_csd())
+    csdEachChan = np.mean(csd,axis=1)
+    sinkInd = np.argmin(csdEachChan)
+    layersEachChan = np.full((data.shape[0]),' '*16,dtype='U16')
+
+    layersEachChan[:sinkInd-1] = 'deep'
+    layersEachChan[sinkInd-1:sinkInd+2] = 'granule'
+    layersEachChan[sinkInd+2:] = 'superficial'
+
+    return layersEachChan,csd_obj
+
+def calc_broadband_power_each_layer(data,timeVec,layersEachChan,stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000):
+    """
+    Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time.
+    """
+    nTrials, nRecChans, nSamples = data.shape
+    nStimChans = len(studyparams.SHANK_ORDER)
+    stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
+    
+    target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
+    scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
+    
+    baseline_mask = (timeVec >= -1.0) & (timeVec < 0.0)
+    
+    bbpwr = np.full((nTrials, nRecChans, nSamples), np.nan, dtype=float)
+    
+    for indt in range(nTrials):
+        for indr, recChan in enumerate(range(nRecChans)):
+            evoked_response = data[indt,recChan,:]
+            
+            coefs, _ = pywt.cwt(evoked_response, scales, 'cmor1.5-1.0', sampling_period=1/fs)
+            pwr = np.abs(coefs)**2
+            
+            broadband_pwr = np.mean(pwr, axis=0)
+            
+            baseline_mean = np.mean(broadband_pwr[baseline_mask])
+            safe_baseline = np.maximum(baseline_mean, 1e-12)
+            safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
+            
+            bbpwr[indt, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
+
+    return bbpwr

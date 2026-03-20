@@ -32,5 +32,5 @@ LFP_BANDS = {
             'HFO': (100.0, 200.0) 
         }
 
-
+LAYERS = ['deep','granule','superficial']
 

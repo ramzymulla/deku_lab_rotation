@@ -4,6 +4,7 @@ import spikeinterface.core as si
 import spikeinterface.extractors as se
 import spikeinterface.preprocessing as sp
 from matplotlib import use,rcParams
+from joblib import Parallel,delayed
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -50,8 +51,15 @@ if not os.path.exists(mpd_graphsDir):
 
 nonStimEdata = {
     'lidocaine1'    :   '183148',
-    'lidocaine2'    :   '184549'
+    'lidocaine2'    :   '184549',
+    'whisk1'        :   '190312'
 }
+
+nonStimBdata={
+    'whisk1'        : [[31,41],[80,90]]
+}
+
+
 
 edataToUse = {
     'site1'     :   ('160803','182402'),   # original insertion
@@ -119,7 +127,7 @@ if __name__ == '__main__':
                 for stream in streamNames:
                     recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(f,stream_name=stream)
 
-                    if downFactor > 1 and stream == "RHS2000 amplifier channel":
+                    if downFactor > 1 and 'amp' in stream:
                         recordingThisFile[streamKeys[stream]] = sp.resample(sp.unsigned_to_signed(recordingThisFile[streamKeys[stream]]),downsampleRate)
 
                         recordingsEachSite[site].append(recordingThisFile)
@@ -258,7 +266,49 @@ if __name__ == '__main__':
                     'baselineEachBlock': [baselineEachBlock[block,:,:] for block in range(nBlocks)]
                 }, dtype=object).to_hdf(saveDatFilename[site],key='df',complevel=4)
             
+    print('---- estimating cortical layers ----')
+    # layerFile = edataFilenames[ephysTimes.index(nonStimEdata['lidocaine1'])]
+    # layerRec = sp.resample(sp.unsigned_to_signed(se.read_split_intan_files(layerFile,stream_id="0")),downsampleRate)
+    # layerDat = layerRec.get_traces().T[studyparams.SHANK_ORDER,:]
+    # layersEachChan,csd_obj = estimate_layers(layerDat)
+    layersEachChan = np.array(['deep', 'deep', 'deep', 'deep', 'granule', 'granule', 'granule',
+            'superficial', 'superficial', 'superficial', 'superficial',
+                'superficial', 'superficial', 'superficial', 'superficial',
+                'superficial'], dtype='<U16')
 
+    
+    print('---- comparing layers ----')
+    powerEachBlockEachLayer = {}
+    timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
+    nStimChans = len(studyparams.SHANK_ORDER)
+    stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
+    stimChanIndOrder = np.concat([np.arange(i*5,i*5+5) for i in stimChanIndOrder])
+    layersEachChan = np.concat([[i]*5 for i in layersEachChan])
+
+    # Prepare task list
+    tasks = []
+    for block in range(combinedSortedLFPs.shape[0]):
+        for layer in studyparams.LAYERS:
+            tasks.append((
+                combinedSortedLFPs[block,(layersEachChan==layer),:,:], timeVec
+            ))
+
+    # Configure parallel processing
+    n_workers = -2  # Use all but one core
+    # n_workers = -1  # Use all cores
+    powerEachBlockEachLayer = Parallel(n_jobs=n_workers,verbose=10)(
+        delayed(calc_broadband_power)(*task) for task in tasks
+    )
+
+    powerEachBlockEachLayer = [{layer:powerEachBlockEachLayer[i*3+j]for j,layer in enumerate(studyparams.LAYERS)} for i in range(combinedSortedLFPs.shape[0])]
+
+    # for layer in studyparams.LAYERS:
+    #     powerEachBlockEachLayer[layer] = np.full((nBlocks,sum((layersEachChan == layer)),*eventLockedLFP.shape[-2:]),np.nan,dtype=float)
+    #     for block in range(nBlocks):
+    #         powerEachBlockEachLayer[layer][block,:,:,:] = calc_broadband_power(combinedSortedLFPs[block,(layersEachChan==layer),:,:], timeVec)
+
+    meansEachBlock = {layer:[np.mean(powerEachBlockEachLayer[block][layer],axis=0)] for block in range(combinedSortedLFPs.shape[0]) for layer in studyparams.LAYERS}
+    stdsEachBlock = {layer:[np.std(powerEachBlockEachLayer[block][layer],axis=0)] for block in range(combinedSortedLFPs.shape[0]) for layer in studyparams.LAYERS}
 
     # downsampleRate = sampleRate//downFactor
     # sampleRange = [1+int(t*downsampleRate) for t in timeRange]
