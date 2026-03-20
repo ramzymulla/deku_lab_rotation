@@ -3,9 +3,13 @@ __pycache__/
 *.py[codz]
 *$py.class
 .DS_Store
+stim_logs/
 logs/
 \#*
 .vscode/
+*~
+
+
 
 # C extensions
 *.so
