@@ -37,7 +37,10 @@ for arg in sys.argv:
 subject = 'OHSU2'
 date = '260320'
 dataRoot = Path(studyparams.DATA_PATH)
-outDir = studyparams.OUTPUT_PATH
+outRoot = studyparams.OUTPUT_PATH
+if not os.path.exists(outRoot):
+    os.mkdir(outRoot)
+outDir = os.path.join(outRoot,subject)
 if not os.path.exists(outDir):
     os.mkdir(outDir)
 
@@ -50,11 +53,8 @@ if not os.path.exists(mpd_graphsDir):
     os.mkdir(mpd_graphsDir)
 
 nonStimEdata = studyparams.nonStimEdata[subject]
-
 nonStimBdata=studyparams.nonStimBdata[subject]
-
 edataToUse = studyparams.edataToUse[subject]
-
 bdataToUse = studyparams.bdataToUse[subject]
 
 bandsToUse = ['Delta','Theta','Alpha','Beta','Low_Gamma','High_Gamma','HFO']
