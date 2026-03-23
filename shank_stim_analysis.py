@@ -116,7 +116,7 @@ if __name__ == '__main__':
                     if downFactor > 1 and 'amp' in stream:
                         recordingThisFile[streamKeys[stream]] = sp.resample(sp.unsigned_to_signed(recordingThisFile[streamKeys[stream]]),downsampleRate)
 
-                        recordingsEachSite[site].append(recordingThisFile)
+                    recordingsEachSite[site].append(recordingThisFile)
 
         ### get events and LFPs ### 
         print(f'---- loading events and LFP for {site} ----')

@@ -91,10 +91,10 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
 
         if downFactor == 1:
             data = sp.remove_artifacts(sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60),
-                                        stimOnsetInds,ms_before=25,ms_after=currStimDur+100).get_traces()
+                                        stimOnsetInds,ms_before=25,ms_after=currStimDur+100,mode='cubic').get_traces()
         else:
             data = sp.remove_artifacts(sp.notch_filter(recording['amp'],60),
-                                        stimOnsetInds,ms_before=25,ms_after=currStimDur+100).get_traces()
+                                        stimOnsetInds,ms_before=25,ms_after=currStimDur+100,mode='cubic').get_traces()
             
         baselineEachBlock[indr,:,:] = data[:downsampleRate*30,:]
 
