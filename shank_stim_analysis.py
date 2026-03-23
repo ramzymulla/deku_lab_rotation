@@ -34,8 +34,8 @@ for arg in sys.argv:
         rcParams['ytick.color'] = COLOR        # Y-axis tick color
         rcParams['axes.edgecolor'] = COLOR
 
-subject = 'FD006'
-date = '260311'
+subject = 'OHSU2'
+date = '260320'
 dataRoot = Path(studyparams.DATA_PATH)
 outDir = studyparams.OUTPUT_PATH
 if not os.path.exists(outDir):
@@ -49,27 +49,13 @@ mpd_graphsDir = os.path.join(outDir,'multiband_donut_figs')
 if not os.path.exists(mpd_graphsDir):
     os.mkdir(mpd_graphsDir)
 
-nonStimEdata = {
-    'lidocaine1'    :   '183148',
-    'lidocaine2'    :   '184549',
-    'whisk1'        :   '190312'
-}
+nonStimEdata = studyparams.nonStimEdata[subject]
 
-nonStimBdata={
-    'whisk1'        : [[31,41],[80,90]]
-}
+nonStimBdata=studyparams.nonStimBdata[subject]
 
+edataToUse = studyparams.edataToUse[subject]
 
-
-edataToUse = {
-    'site1'     :   ('160803','182402'),   # original insertion
-    # 'site2'     :   ''
-}
-
-bdataToUse = {
-    'site1'     :   '160754',   # original insertion
-    # 'site2'     :   ''
-}
+bdataToUse = studyparams.bdataToUse[subject]
 
 bandsToUse = ['Delta','Theta','Alpha','Beta','Low_Gamma','High_Gamma','HFO']
 saveDatFilename = {site:os.path.join(processedDataPath,f"{subject}_{date}_{site}_processed.hdf") for site in edataToUse}
@@ -265,13 +251,19 @@ if __name__ == '__main__':
                     'lfpEachBlock': [eventLockedLFP[block,:,:,:] for block in range(nBlocks)],
                     'baselineEachBlock': [baselineEachBlock[block,:,:] for block in range(nBlocks)]
                 }, dtype=object).to_hdf(saveDatFilename[site],key='df',complevel=4)
-            
+    
+    
     print('---- estimating cortical layers ----')
-    # layerFile = edataFilenames[ephysTimes.index(nonStimEdata['lidocaine1'])]
-    # layerRec = sp.resample(sp.unsigned_to_signed(se.read_split_intan_files(layerFile,stream_id="0")),downsampleRate)
-    # layerDat = layerRec.get_traces().T[studyparams.SHANK_ORDER,:]
-    # layersEachChan,csd_obj = estimate_layers(layerDat)
-    layersEachChan = np.array(['deep', 'deep', 'deep', 'deep', 'granule', 'granule', 'granule',
+    if 'OHSU' in subject:
+        layerFile = edataFilenames[ephysTimes.index(nonStimEdata['whisk'])]
+        layerRec = sp.resample(sp.unsigned_to_signed(se.read_split_intan_files(layerFile,stream_id="0")),downsampleRate)
+        ttlRec = se.read_split_intan_files(layerFile,stream_id='5')     # get digital in data stream
+        ttlOnsets = get_ttl_onsets(ttlRec.get_traces().T[0])//downFactor
+        layerDat = np.array([layerRec.get_traces().T[:,int(event+0.08*downsampleRate):int(event+0.2*downsampleRate)] for event in ttlOnsets])
+        layersEachChan,csd_obj = estimate_layers(np.mean(layerDat,axis=0))
+
+    else:
+        layersEachChan = np.array(['deep', 'deep', 'deep', 'deep', 'granule', 'granule', 'granule',
             'superficial', 'superficial', 'superficial', 'superficial',
                 'superficial', 'superficial', 'superficial', 'superficial',
                 'superficial'], dtype='<U16')

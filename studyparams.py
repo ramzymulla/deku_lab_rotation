@@ -4,9 +4,53 @@ import numpy as np
 STUDY_NAME = 'HybridDevice'
 
 
-SUBJECTS = ['FD005','FD006']
+SUBJECTS = ['FD005','FD006', 'OHSU2']
 DATA_PATH = os.path.join(os.path.expanduser('~'),'Research','dekulab','HybridDevice')
 OUTPUT_PATH = os.path.join(os.path.expanduser('~'),'Desktop','dekulab_analysis')
+
+nonStimEdata = {
+    'FD006':{
+        'lidocaine1'    :   '183148',
+        'lidocaine2'    :   '184549',
+        'whisk1'        :   '190312'
+    },
+    'OHSU2':{
+        'whisk'         :   '190625'
+    }
+    
+}
+
+nonStimBdata={
+    'FD006':{
+        'whisk1'        : [[31,41],[80,90]]
+    },
+    'OHSU2':{
+        'whisk'         : []
+    }
+    
+}
+
+edataToUse = {
+    'FD006':{
+        'main'     :   ('160803','182402')   # original insertion
+        # 'site2'     :   ''
+    },
+    'OHSU2':{
+        'main'     :   ('191608','200328'),
+        'site2'    :    () 
+    }
+}
+
+bdataToUse = {
+    'FD006':{
+        'main'     :   '160754',   # original insertion
+        # 'site2'    
+    },
+    'OHSU2':{
+        'main'      :   '191559'
+    }
+
+}
 
 SITE_TIP_DEPTHS = {
     'site1': 2100,

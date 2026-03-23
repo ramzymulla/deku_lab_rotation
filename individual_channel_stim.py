@@ -100,7 +100,7 @@ def main():
     start_time_str = start_time_dt.strftime("%Y%m%d_%H%M%S.%f")
     if not os.path.exists('stim_logs'):
         os.mkdir('stim_logs')
-    log_filename = os.path.join(f"stim_logs",f"single_channel_stim_log_{start_time_str}.csv")
+    log_filename = os.path.join(f"stim_logs",f"single_channel_stim_log_{start_time_dt.strftime("%Y%m%d_%H%M%S")}.csv")
     
     with open(log_filename, mode='w', newline='') as log_file:
         csv_writer = csv.writer(log_file)

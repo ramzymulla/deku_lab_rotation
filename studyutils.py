@@ -16,6 +16,8 @@ import quantities as pq
 import neo
 from elephant.current_source_density import icsd,estimate_csd
 
+def get_ttl_onsets(ttldata):
+    return np.nonzero(np.diff(ttldata)==-1)[0]
 
 def get_events_and_LFPs(recordingsEachSite, site,bdata,
                           timeRange = [-0.5,1.5], 
@@ -720,7 +722,7 @@ def plot_icsd(lfp_data,spacing,diam=500):
     #plot spatially filtered csd estimate
     ax = axes[2]
     csd = csd_obj.filter_csd(csd)
-    cbmax = np.percentile(csd,99)
+    cbmax = np.percentile(abs(csd),99)
     im = ax.imshow(np.array(csd), origin='upper', vmin=-cbmax, \
           vmax=cbmax, cmap='RdBu_r', interpolation='nearest')
     ax.axis(ax.axis('tight'))
@@ -778,3 +780,5 @@ def calc_broadband_power_each_layer(data,timeVec,layersEachChan,stimDur=0.65, fr
             bbpwr[indt, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
 
     return bbpwr
+
+
