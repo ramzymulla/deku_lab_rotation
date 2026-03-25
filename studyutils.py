@@ -8,6 +8,7 @@ from datetime import datetime
 import spikeinterface.core as si
 import spikeinterface.extractors as se
 import spikeinterface.preprocessing as sp
+from matplotlib import use,rcParams
 from pathlib import Path
 from scipy.ndimage import gaussian_filter1d
 import pywt
@@ -24,8 +25,9 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
                           highcut = 300, 
                           sampleRate = 30000,
                           downFactor = 1,
-                          ISI = 1.5,
-                          nChannels = 32):
+                          ISI = 2.5,
+                          nChannels = 32,
+                          baselineDur = 30):
 
     downsampleRate = sampleRate//downFactor ################################
     sampleRange = [1+int(t*downsampleRate) for t in timeRange]
@@ -34,7 +36,7 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
     nTrialsEachBlock = len(bdata)//nRecordingsThisSite
 
 
-    if downFactor ==1:
+    if downFactor !=1:
         bCoeff, aCoeff = signal.iirfilter(4, Wn=highcut, fs=downsampleRate, btype="low", ftype="butter")
 
     eventLockedLFP = np.empty((nRecordingsThisSite,nTrialsEachBlock,nSamplesToExtract,nChannels),dtype=np.int16)
@@ -50,31 +52,31 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
             
             # ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the bdata timestamps ###
             indt = indr*nTrialsEachBlock
-            stimTimes = bdata[indt:indt+40]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
+            stimTimes = bdata[indt:indt+nTrialsEachBlock]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
                                                                             - datetime(1900,1,1)).total_seconds()).values
             
-            stimTimes = ((30 + stimTimes - stimTimes[0]))
-            stimChans = bdata[indt:indt+40]['Channel'].apply(lambda x: int(x[2:])).values
-            stimOnsetInds1 = (sampleRate*stimTimes).astype(int)//downFactor
+            stimTimes = ((baselineDur + stimTimes - stimTimes[0]))
+            stimChans = bdata[indt:indt+nTrialsEachBlock]['Channel'].apply(lambda x: int(x[2:])).values
+            stimOnsetInds = (sampleRate*stimTimes).astype(int)//downFactor
 
-            dc = recording['dc'].get_traces()
-            sumDC = np.sum(dc,axis=1)
-            medsumDC = np.median(sumDC)
-            prop=1.01
-            stimOnsetInds = np.nonzero((sumDC>prop*medsumDC))[0]//downFactor
+            # dc = recording['dc'].get_traces()
+            # sumDC = np.sum(dc,axis=1)
+            # medsumDC = np.median(sumDC)
+            # prop=1.01
+            # stimOnsetInds = np.nonzero((sumDC>prop*medsumDC))[0]//downFactor
             
             
-            if len(stimOnsetInds) != 40:
-                for prop in np.linspace(1,np.max(sumDC)/np.median(sumDC),500)[1:]:
-                    stimOnsetInds = np.nonzero((sumDC>prop*medsumDC))[0]//downFactor
-                    if len(stimOnsetInds) == 40:
-                        break
+            # if len(stimOnsetInds) != 40:
+            #     for prop in np.linspace(1,np.max(sumDC)/np.median(sumDC),500)[1:]:
+            #         stimOnsetInds = np.nonzero((sumDC>prop*medsumDC))[0]//downFactor
+            #         if len(stimOnsetInds) == 40:
+            #             break
                     
         else:
-            stims = np.argmax(np.hstack([np.abs(stims), np.ones((stims.shape[0],1))]),axis=1) - 32
+            stims = np.argmax(np.hstack([np.abs(stims), np.ones((stims.shape[0],1))]),axis=1) - nChannels
             stimInds = np.nonzero(stims)[0]
             stimOnsetInds = np.concat([stimInds[:1],stimInds[1:][(np.diff(stimInds) > 0.5*ISI*sampleRate)]])//downFactor
-            stimChans = stims[stimOnsetInds*downFactor]+32
+            stimChans = stims[stimOnsetInds*downFactor]+nChannels
 
         
         channelStimEachTrial.extend(stimChans)
@@ -91,19 +93,24 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
 
         if downFactor == 1:
             data = sp.remove_artifacts(sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60),
-                                        stimOnsetInds,ms_before=25,ms_after=currStimDur+100,mode='cubic').get_traces()
+                                        stimOnsetInds,ms_before=0,ms_after=currStimDur+5,mode='zeros').get_traces()
         else:
             data = sp.remove_artifacts(sp.notch_filter(recording['amp'],60),
-                                        stimOnsetInds,ms_before=25,ms_after=currStimDur+100,mode='cubic').get_traces()
+                                        stimOnsetInds,ms_before=0,ms_after=currStimDur+5,mode='zeros').get_traces()
             
-        baselineEachBlock[indr,:,:] = data[:downsampleRate*30,:]
+        # if downFactor == 1:
+        #     data = sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60).get_traces()
+        # else:
+        #     data = sp.notch_filter(recording['amp'],60).get_traces()
+            
+        baselineEachBlock[indr,:,:] = data[:downsampleRate*downFactor,:]
 
         for indt, evSample in enumerate(stimOnsetInds):
             if evSample + sampleRange[0] < 0:
                 break
             currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
 
-        if downFactor > 1:
+        if downFactor==1:
             # eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
             eventLockedLFP[indr,:,:,:] = currEVLFPs
 
@@ -152,7 +159,7 @@ def plot_multiband_power(ax, chanInds, power_dict, time_vector, sigma=5, withLab
         ax.set_ylim(y_min, y_max)
         ax.set_xlim(time_vector[0], time_vector[-1])
 
-def plot_radial_multiband_power(power_dict, time_vector, stimDur=0.65,baselineDict=None,sigma=2, donutChans = studyparams.DONUT_ORDER,scalebar_y=None,scalebar_x=None):
+def plot_radial_multiband_power(power_dict, time_vector, stimDur=0.65,baselineDict=None,sigma=20, donutChans = studyparams.DONUT_ORDER,scalebar_y=None,scalebar_x=None):
     """
     Plots overlapping, smoothed peristimulus power for multiple LFP bands in a concentric layout.
     
@@ -196,7 +203,7 @@ def plot_radial_multiband_power(power_dict, time_vector, stimDur=0.65,baselineDi
     all_maxs = [np.max(data) for data in smoothed_data.values()]
     min_bls = [np.min(data[:,:,((time_vector<0)|(time_vector>stimDur+0.05))]) for data in smoothed_data.values()]
     # y_min = float(np.min(all_mins))
-    y_min = float(np.min(min_bls))*0.9
+    y_min = float(np.min(min_bls))
     y_max = float(np.max(all_maxs))
     
     colors = plt.cm.tab10(np.linspace(0, 1, len(power_dict)))
@@ -243,8 +250,8 @@ def plot_radial_multiband_power(power_dict, time_vector, stimDur=0.65,baselineDi
         y0 = y_min
         
         # Draw L-shape
-        scale_ax.plot([x0, x0 + scalebar_x], [y0, y0], color='black', lw=8) 
-        scale_ax.plot([x0, x0], [y0, y0 + scalebar_y], color='black', lw=8)
+        scale_ax.plot([x0, x0 + scalebar_x], [y0, y0], color=rcParams['axes.edgecolor'], lw=8) 
+        scale_ax.plot([x0, x0], [y0, y0 + scalebar_y], color=rcParams['axes.edgecolor'], lw=8)
         
         # Add text labels
         x_range = time_vector[-1] - time_vector[0]
@@ -359,7 +366,7 @@ def calc_evoked_lfp_time_frequency(data, freqs, fs=1000.0, wavelet='cmor1.5-1.0'
         
     return freqs, power
 
-def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=500, fs=1000, shankDepths=studyparams.SHANK_DEPTHS['site1']):
+def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=400, fs=1000, shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
     """
     Calculates and plots the baseline-normalized, stimulus-evoked LFP power spectra across recording and stimulus channels.
 
@@ -397,8 +404,8 @@ def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=5
     nFreqs_plot = len(plot_freqs)
     
     # Define time segment masks
-    baseline_mask = (timeVec >= -1.0) & (timeVec < 0.0)
-    post_mask = (timeVec >= stimDur+0.05)
+    baseline_mask = (timeVec < 0)
+    post_mask = (timeVec > stimDur+0.05)
     
     # Initialize with NaNs to prevent unallocated memory artifacts
     dataToPlot = np.full((nStimChans, nRecChans, nFreqs_plot), np.nan, dtype=float)
@@ -467,24 +474,76 @@ def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=5
         
     return plot_freqs, dataToPlot, fig, ax
 
-def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000):
+# def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[4, 100], nperseg=100, fs=1000):
+#     """
+#     Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time.
+#     """
+#     nTrials, nRecChans, nSamples = data.shape
+#     nStimChans = len(studyparams.SHANK_ORDER)
+#     stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
+    
+#     target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
+#     scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
+    
+#     baseline_mask = (timeVec < -0.1)
+#     evoked_mask = (timeVec > stimDur)
+    
+#     bbpwr = np.full((nTrials, nRecChans, nSamples), np.nan, dtype=float)
+    
+#     for indt in range(nTrials):
+#         for indr, recChan in enumerate(range(nRecChans)):
+#             evoked_response = data[indt,recChan,:]
+            
+#             coefs, _ = pywt.cwt(evoked_response, scales, 'cmor1.5-1.0', sampling_period=1/fs)
+#             pwr = np.abs(coefs)**2
+
+
+            
+#             broadband_pwr = np.mean(pwr, axis=0)
+            
+#             baseline_mean = np.mean(broadband_pwr[baseline_mask])
+#             if baseline_mean == 0:
+#                 print("baseline_mean is ZERO!!!")
+#             # safe_baseline = np.maximum(baseline_mean, 1e-12)
+#             # safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
+#             safe_baseline = baseline_mean
+#             safe_time_pwr = broadband_pwr
+            
+#             bbpwr[indt, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
+
+#     return bbpwr
+
+def calc_broadband_power(data, timeVec, stimDur=0.65, freqRange=[4, 100], nperseg=100, fs=1000):
     """
-    Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time.
+    Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time,
+    with linear interpolation across the stimulus artifact to prevent temporal smearing.
     """
     nTrials, nRecChans, nSamples = data.shape
-    nStimChans = len(studyparams.SHANK_ORDER)
-    stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
     
     target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
     scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
     
-    baseline_mask = (timeVec >= -1.0) & (timeVec < 0.0)
+    baseline_mask = (timeVec < -0.1)
+    
+    # Identify indices for the artifact window (assuming stimulus starts at t=0)
+    art_start_idx = np.searchsorted(timeVec, 0.0) 
+    art_end_idx = np.searchsorted(timeVec, stimDur)
     
     bbpwr = np.full((nTrials, nRecChans, nSamples), np.nan, dtype=float)
     
     for indt in range(nTrials):
-        for indr, recChan in enumerate(range(nRecChans)):
-            evoked_response = data[indt,recChan,:]
+        for indr in range(nRecChans):
+            # Copy to avoid modifying the original array in memory
+            evoked_response = np.copy(data[indt, indr, :])
+            
+            # Interpolate across the artifact window to remove the massive spike
+            if art_start_idx < art_end_idx and art_start_idx > 0 and art_end_idx < nSamples:
+                x_interp = [timeVec[art_start_idx-1], timeVec[art_end_idx]]
+                y_interp = [evoked_response[art_start_idx-1], evoked_response[art_end_idx]]
+                
+                evoked_response[art_start_idx:art_end_idx] = np.interp(
+                    timeVec[art_start_idx:art_end_idx], x_interp, y_interp
+                )
             
             coefs, _ = pywt.cwt(evoked_response, scales, 'cmor1.5-1.0', sampling_period=1/fs)
             pwr = np.abs(coefs)**2
@@ -492,6 +551,7 @@ def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[0, 200], nperseg=
             broadband_pwr = np.mean(pwr, axis=0)
             
             baseline_mean = np.mean(broadband_pwr[baseline_mask])
+            
             safe_baseline = np.maximum(baseline_mean, 1e-12)
             safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
             
@@ -499,7 +559,7 @@ def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[0, 200], nperseg=
 
     return bbpwr
 
-def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000, shankDepths=studyparams.SHANK_DEPTHS['site1']):
+def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000, shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
     """
     Calculates and plots the baseline-normalized, stimulus-evoked LFP broadband power over time.
     """
@@ -512,19 +572,23 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
     target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
     scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
     
-    baseline_mask = (timeVec >= -1.0) & (timeVec < 0.0)
-    
+    baseline_mask = (timeVec < -0.1)
+    evoked_mask = (timeVec > stimDur)
     dataToPlot = np.full((nStimChans, nRecChans, nSamples), np.nan, dtype=float)
     
     for inds, stimChan in enumerate(stimChanIndOrder[::-1]):
         for indr, recChan in enumerate(recChanOrder):
             trial_slice = data[stimChan*5:stimChan*5 + 5, recChan, :]
-            evoked_response = np.mean(trial_slice, axis=0)
+            # pwrs = np.zeros_like(trial_slice)
             
-            coefs, _ = pywt.cwt(evoked_response, scales, 'cmor1.5-1.0', sampling_period=1/fs)
-            pwr = np.abs(coefs)**2
-            
-            broadband_pwr = np.mean(pwr, axis=0)
+            # for trial in range(pwrs.shape[0]): 
+            #     coefs, _ = pywt.cwt(trial_slice[trial], scales, 'cmor1.5-1.0', sampling_period=1/fs)
+            #     pwrs[trial] = np.mean(np.abs(coefs)**2,axis=0)
+
+            coefs,_ = pywt.cwt(np.mean(trial_slice,axis=0),scales, 'cmor1.5-1.0', sampling_period=1/fs)
+            pwrs = np.abs(coefs**2)
+                
+            broadband_pwr = np.mean(pwrs, axis=0)
             
             baseline_mean = np.mean(broadband_pwr[baseline_mask])
             safe_baseline = np.maximum(baseline_mean, 1e-12)
@@ -533,7 +597,7 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
             dataToPlot[inds, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
 
     # abs_max = np.nanmax(np.abs(dataToPlot[:,:,(timeVec>stimDur+0.05)]))
-    abs_max = 15
+    abs_max = 20
     vmin = -abs_max
     vmax = abs_max
     
@@ -735,10 +799,14 @@ def plot_icsd(lfp_data,spacing,diam=500):
     return fig, axes
 
 def estimate_layers(data,spacing=100,diam=40):
-
     ### get csd ###
-    csd_obj = compute_1d_csd(data,spacing,diam)
-    csd = csd_obj.filter_csd(csd_obj.get_csd())
+    if len(data.shape)==3:
+        csd_obj = [compute_1d_csd(data[event],spacing,diam) for event in range(data.shape[0])]
+        csd = np.mean(np.array([obj.filter_csd(obj.get_csd()) for obj in csd_obj]),axis=0)
+    else:
+        csd_obj = compute_1d_csd(data,spacing,diam)
+        csd = csd_obj.filter_csd(csd_obj.get_csd())
+
     csdEachChan = np.mean(csd,axis=1)
     sinkInd = np.argmin(csdEachChan)
     layersEachChan = np.full((data.shape[0]),' '*16,dtype='U16')
@@ -747,7 +815,7 @@ def estimate_layers(data,spacing=100,diam=40):
     layersEachChan[sinkInd-1:sinkInd+2] = 'granule'
     layersEachChan[sinkInd+2:] = 'superficial'
 
-    return layersEachChan,csd_obj
+    return layersEachChan,csd_obj,csdEachChan
 
 def calc_broadband_power_each_layer(data,timeVec,layersEachChan,stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000):
     """

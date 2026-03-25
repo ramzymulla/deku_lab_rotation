@@ -106,7 +106,7 @@ def main():
         csv_writer = csv.writer(log_file)
         # Write CSV Header
         csv_writer.writerow([
-             'Date_Time', 'Channel', 'Timestamp', 'Waveform', 
+             'Channel', 'Timestamp',  'Waveform', 
             'Base_Amp_uA', 'Freq_Hz', 'Train_Dur_ms', 
             'Phase_1_us', 'Interphase_Delay_us', 'Phase_2_us'
         ])

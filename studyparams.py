@@ -5,6 +5,11 @@ STUDY_NAME = 'HybridDevice'
 
 
 SUBJECTS = ['FD005','FD006', 'OHSU2']
+DATES = {
+    'FD005' :   '260304',
+    'FD006' :   '260311',
+    'OHSU2' :   '260320'
+}
 DATA_PATH = os.path.join(os.path.expanduser('~'),'Research','dekulab','HybridDevice')
 OUTPUT_PATH = os.path.join(os.path.expanduser('~'),'Desktop','dekulab_analysis')
 
@@ -36,8 +41,7 @@ edataToUse = {
         # 'site2'     :   ''
     },
     'OHSU2':{
-        'main'     :   ('191608','200328'),
-        'site2'    :    () 
+        'main'     :   ('191608','200328')
     }
 }
 
@@ -53,12 +57,21 @@ bdataToUse = {
 }
 
 SITE_TIP_DEPTHS = {
-    'site1': 2100,
-    'site2': 2600
+    'FD006':{
+        'main': 2100,
+        'site2': 2600
+    },
+    'FD005':{
+        'main': 2100
+    },
+    'OHSU2':{
+        'main':2100
+    }
+    
 }
 
 SHANK_ORDER = np.array([24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28])
-SHANK_DEPTHS = {site:(SITE_TIP_DEPTHS[site]-500) - np.arange(0,16)*100 for site in SITE_TIP_DEPTHS}# um
+SHANK_DEPTHS = {subject:{site:(SITE_TIP_DEPTHS[subject][site]-500) - np.arange(0,16)*100 for site in SITE_TIP_DEPTHS[subject]} for subject in SUBJECTS}# um
 SHANK_CHANS = [f"a-{site:03d}" for site in SHANK_ORDER] 
 
 DONUT_ORDER = np.array([[20, 22, 10, 11, 19, 18, 14, 12],
