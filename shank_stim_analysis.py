@@ -3,7 +3,7 @@ import os
 import spikeinterface.core as si
 import spikeinterface.extractors as se
 import spikeinterface.preprocessing as sp
-from matplotlib import use,rcParams
+from matplotlib import use,rcParams,get_backend
 from joblib import Parallel,delayed
 from pathlib import Path
 import numpy as np
@@ -25,6 +25,7 @@ for arg in sys.argv:
     elif arg == 'savedat':
         SAVEDAT = True
     elif arg == 'makefigs':
+        ogbackend = get_backend()
         MAKEFIGS = True
         use('agg')
         COLOR = 'white'  
@@ -503,5 +504,5 @@ if __name__ == '__main__':
 
 
 if MAKEFIGS:
-    use('qtagg')
+    use(ogbackend)
     plt.close()
