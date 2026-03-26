@@ -503,5 +503,5 @@ if __name__ == '__main__':
 
 
 if MAKEFIGS:
-    use('tkagg')
+    use('qtagg')
     plt.close()
