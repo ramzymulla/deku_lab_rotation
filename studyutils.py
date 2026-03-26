@@ -329,7 +329,7 @@ def calc_evoked_lfp_power(data, fs=1000.0, nperseg=None):
     
     return freqs, power
 
-def calc_evoked_lfp_time_frequency(data, freqs, fs=1000.0, wavelet='cmor1.5-1.0'):
+def calc_evoked_lfp_time_frequency(data, freqs, fs=1000.0, wavelet='cmor0.5-1.0'):
     """
     Computes the stimulus-evoked LFP time-frequency representation using PyWavelets.
     
@@ -474,92 +474,48 @@ def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=4
         
     return plot_freqs, dataToPlot, fig, ax
 
-# def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[4, 100], nperseg=100, fs=1000):
-#     """
-#     Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time.
-#     """
-#     nTrials, nRecChans, nSamples = data.shape
-#     nStimChans = len(studyparams.SHANK_ORDER)
-#     stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
-    
-#     target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
-#     scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
-    
-#     baseline_mask = (timeVec < -0.1)
-#     evoked_mask = (timeVec > stimDur)
-    
-#     bbpwr = np.full((nTrials, nRecChans, nSamples), np.nan, dtype=float)
-    
-#     for indt in range(nTrials):
-#         for indr, recChan in enumerate(range(nRecChans)):
-#             evoked_response = data[indt,recChan,:]
-            
-#             coefs, _ = pywt.cwt(evoked_response, scales, 'cmor1.5-1.0', sampling_period=1/fs)
-#             pwr = np.abs(coefs)**2
-
-
-            
-#             broadband_pwr = np.mean(pwr, axis=0)
-            
-#             baseline_mean = np.mean(broadband_pwr[baseline_mask])
-#             if baseline_mean == 0:
-#                 print("baseline_mean is ZERO!!!")
-#             # safe_baseline = np.maximum(baseline_mean, 1e-12)
-#             # safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
-#             safe_baseline = baseline_mean
-#             safe_time_pwr = broadband_pwr
-            
-#             bbpwr[indt, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
-
-#     return bbpwr
-
-def calc_broadband_power(data, timeVec, stimDur=0.65, freqRange=[4, 100], nperseg=100, fs=1000):
+def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[4, 100], nperseg=100, fs=1000, wavelet = 'cmor1.5-1.0'):
     """
-    Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time,
-    with linear interpolation across the stimulus artifact to prevent temporal smearing.
+    Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time.
     """
     nTrials, nRecChans, nSamples = data.shape
+    nStimChans = len(studyparams.SHANK_ORDER)
+    stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
     
     target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
-    scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
+    scales = pywt.central_frequency(wavelet) * fs / target_freqs
     
     baseline_mask = (timeVec < -0.1)
-    
-    # Identify indices for the artifact window (assuming stimulus starts at t=0)
-    art_start_idx = np.searchsorted(timeVec, 0.0) 
-    art_end_idx = np.searchsorted(timeVec, stimDur)
+    evoked_mask = (timeVec > stimDur)
     
     bbpwr = np.full((nTrials, nRecChans, nSamples), np.nan, dtype=float)
     
     for indt in range(nTrials):
-        for indr in range(nRecChans):
-            # Copy to avoid modifying the original array in memory
-            evoked_response = np.copy(data[indt, indr, :])
+        for indr, recChan in enumerate(range(nRecChans)):
+            evoked_response = data[indt,recChan,:]
             
-            # Interpolate across the artifact window to remove the massive spike
-            if art_start_idx < art_end_idx and art_start_idx > 0 and art_end_idx < nSamples:
-                x_interp = [timeVec[art_start_idx-1], timeVec[art_end_idx]]
-                y_interp = [evoked_response[art_start_idx-1], evoked_response[art_end_idx]]
-                
-                evoked_response[art_start_idx:art_end_idx] = np.interp(
-                    timeVec[art_start_idx:art_end_idx], x_interp, y_interp
-                )
-            
-            coefs, _ = pywt.cwt(evoked_response, scales, 'cmor1.5-1.0', sampling_period=1/fs)
+            coefs, _ = pywt.cwt(evoked_response, scales, wavelet, sampling_period=1/fs)
             pwr = np.abs(coefs)**2
+
+
             
             broadband_pwr = np.mean(pwr, axis=0)
             
             baseline_mean = np.mean(broadband_pwr[baseline_mask])
-            
-            safe_baseline = np.maximum(baseline_mean, 1e-12)
-            safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
+            if baseline_mean == 0:
+                print("baseline_mean is ZERO!!!")
+            # safe_baseline = np.maximum(baseline_mean, 1e-12)
+            # safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
+            safe_baseline = baseline_mean
+            safe_time_pwr = broadband_pwr
             
             bbpwr[indt, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
 
     return bbpwr
 
-def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000, shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
+
+
+def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000, wavelet = 'cmor1.5-1.0',shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
     """
     Calculates and plots the baseline-normalized, stimulus-evoked LFP broadband power over time.
     """
@@ -572,23 +528,23 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
     target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
     scales = pywt.central_frequency('cmor1.5-1.0') * fs / target_freqs
     
-    baseline_mask = (timeVec < -0.1)
+    baseline_mask = (timeVec < 0)
     evoked_mask = (timeVec > stimDur)
     dataToPlot = np.full((nStimChans, nRecChans, nSamples), np.nan, dtype=float)
     
     for inds, stimChan in enumerate(stimChanIndOrder[::-1]):
         for indr, recChan in enumerate(recChanOrder):
             trial_slice = data[stimChan*5:stimChan*5 + 5, recChan, :]
+
             # pwrs = np.zeros_like(trial_slice)
-            
             # for trial in range(pwrs.shape[0]): 
-            #     coefs, _ = pywt.cwt(trial_slice[trial], scales, 'cmor1.5-1.0', sampling_period=1/fs)
+            #     coefs, _ = pywt.cwt(trial_slice[trial], scales, wavelet, sampling_period=1/fs)
             #     pwrs[trial] = np.mean(np.abs(coefs)**2,axis=0)
 
-            coefs,_ = pywt.cwt(np.mean(trial_slice,axis=0),scales, 'cmor1.5-1.0', sampling_period=1/fs)
+            coefs,_ = pywt.cwt(np.mean(trial_slice,axis=0),scales, wavelet, sampling_period=1/fs)
             pwrs = np.abs(coefs**2)
                 
-            broadband_pwr = np.mean(pwrs, axis=0)
+            broadband_pwr = np.mean(pwrs,axis=0)
             
             baseline_mean = np.mean(broadband_pwr[baseline_mask])
             safe_baseline = np.maximum(baseline_mean, 1e-12)
@@ -597,7 +553,7 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
             dataToPlot[inds, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
 
     # abs_max = np.nanmax(np.abs(dataToPlot[:,:,(timeVec>stimDur+0.05)]))
-    abs_max = 20
+    abs_max = 15
     vmin = -abs_max
     vmax = abs_max
     

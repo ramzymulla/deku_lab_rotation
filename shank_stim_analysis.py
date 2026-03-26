@@ -59,6 +59,7 @@ bdataToUse = studyparams.bdataToUse[subject]
 
 bandsToUse = ['Delta','Theta','Alpha','Beta','Low_Gamma','High_Gamma','HFO']
 saveDatFilename = {site:os.path.join(processedDataPath,f"{subject}_{date}_{site}_processed.hdf") for site in edataToUse}
+combosaveDatFilename = {site:os.path.join(processedDataPath,f"combined_blocks_{subject}_{date}_{site}_processed.hdf") for site in edataToUse}
 
 if __name__ == '__main__':
 
@@ -70,7 +71,7 @@ if __name__ == '__main__':
     highcut = 300
     nStimChansEachBlock = 8
 
-    timeRange = [-0.5,1.5]
+    timeRange = [-1,2]
     sampleRange = [int(t*downsampleRate)+1 for t in timeRange]
     timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
     nSamplesToExtract = sampleRange[1]-sampleRange[0]
@@ -123,7 +124,7 @@ if __name__ == '__main__':
         ### get events and LFPs ### 
         print(f'---- loading events and LFP for {site} ----')
         if LOAD and os.path.exists(saveDatFilename[site]):
-            channelStimEachBlock,eventLockedLFP,baselineEachBlock = [np.stack(list(series),axis=0) for _,series in pd.read_hdf(saveDatFilename[site]).items()]
+            channelStimEachBlock,eventLockedLFP,baselineEachBlock = [np.stack(list(series),axis=0) for key,series in pd.read_hdf(saveDatFilename[site]).items() if 'layer' not in str(key).lower()]
             channelStimEachTrial = channelStimEachBlock.flatten()
         else:
             channelStimEachTrial,eventLockedLFP,baselineEachBlock = get_events_and_LFPs(recordingsEachSite,
@@ -137,12 +138,7 @@ if __name__ == '__main__':
 
         print('---- done extracting events and LFP ----')
         nBlocks,nTrialsEachBlock,nChannels,nSamples = eventLockedLFP.shape
-        if SAVEDAT:
-            pd.DataFrame({
-                    'channelStimsEachBlock': [channelStimEachBlock[block,:] for block in range(nBlocks)],
-                    'lfpEachBlock': [eventLockedLFP[block,:,:,:] for block in range(nBlocks)],
-                    'baselineEachBlock': [baselineEachBlock[block,:,:] for block in range(nBlocks)]
-                }, dtype=object).to_hdf(saveDatFilename[site],key='df',complevel=4)
+    
         
         ### sort by channel stim ###
         sortingIndsEachBlock = np.argsort(channelStimEachBlock,axis = 1)
@@ -179,7 +175,7 @@ if __name__ == '__main__':
         
 
 
-                freqs,dataToPlot,fig,ax = plot_broadband_power(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[4,100])
+                freqs,dataToPlot,fig,ax = plot_broadband_power(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[1.5,100])
                 suptitleStr = f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" 
                 fig.suptitle(suptitleStr,fontsize=24, fontweight='bold');
                 filename = f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_broadband_power.png"
@@ -274,7 +270,7 @@ if __name__ == '__main__':
                 'superficial', 'superficial', 'superficial', 'superficial',
                 'superficial'], dtype='<U16')
 
-    
+
     print('---- comparing layers ----')
     powerEachBlockEachLayer = {}
     timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
@@ -292,46 +288,74 @@ if __name__ == '__main__':
                 combinedSortedLFPs[block,(layersEachChan==layer),:,:], 
                 timeVec,
                 stimDur,
-                [4,100]
+                [1.5,100],
+                100,
+                downsampleRate,
+                'cmor1.5-1.0'
             ))
 
-    # Configure parallel processing
-    n_workers = -2  # Use all but one core
-    # n_workers = -1  # Use all cores
-    powerEachBlockEachLayer = Parallel(n_jobs=n_workers,verbose=10)(
-        delayed(calc_broadband_power)(*task) for task in tasks
-    )
+    if not LOAD or 0:
+        # Configure parallel processing
+        n_workers = -2  # Use all but one core
+        # n_workers = -1  # Use all cores
+        powerEachBlockEachLayer = Parallel(n_jobs=n_workers,verbose=10)(
+            delayed(calc_broadband_power)(*task) for task in tasks
+        )
 
-    powerEachBlockEachLayer = [{layer:powerEachBlockEachLayer[i*3+j]for j,layer in enumerate(studyparams.LAYERS)} for i in range(combinedSortedLFPs.shape[0])]
+        powerEachBlockEachLayer = [{layer:powerEachBlockEachLayer[i*3+j]for j,layer in enumerate(studyparams.LAYERS)} for i in range(combinedSortedLFPs.shape[0])]
+    else:
+        powerEachBlockEachLayer = pd.read_hdf(combosaveDatFilename[site])['powerEachBlockEachLayer'].values
 
     # for layer in studyparams.LAYERS:
     #     powerEachBlockEachLayer[layer] = np.full((nBlocks,sum((layersEachChan == layer)),*eventLockedLFP.shape[-2:]),np.nan,dtype=float)
     #     for block in range(nBlocks):
     #         powerEachBlockEachLayer[layer][block,:,:,:] = calc_broadband_power(combinedSortedLFPs[block,(layersEachChan==layer),:,:], timeVec)
 
-    meansEachBlock = {layer:[np.median(powerEachBlockEachLayer[block][layer],axis=0) for block in range(combinedSortedLFPs.shape[0])] for layer in studyparams.LAYERS}
+    meansEachBlock = {layer:[np.mean(powerEachBlockEachLayer[block][layer],axis=0) for block in range(combinedSortedLFPs.shape[0])] for layer in studyparams.LAYERS}
     stdsEachBlock = {layer:[np.std(powerEachBlockEachLayer[block][layer],axis=0) for block in range(combinedSortedLFPs.shape[0])] for layer in studyparams.LAYERS}
 
+    # meansEachLayer = {layer:np.array([np.mean(combinedSortedLFPs[block,layersEachChan==layer,:,stimParamsEachBlock['main'][block]['Train_Dur_ms']-timeRange[0]*downsampleRate:],axis=-1) \
+    #                                     for block in range(combinedSortedLFPs.shape[0])]) for layer in studyparams.LAYERS}
+    
     meansEachLayer = {layer:np.array([np.mean(powerEachBlockEachLayer[block][layer][:,:,(timeVec>stimParamsEachBlock['main'][block]['Train_Dur_ms']/1000)],axis=-1) \
-                                      for block in range(combinedSortedLFPs.shape[0])]) for layer in studyparams.LAYERS}
-
+                                        for block in range(combinedSortedLFPs.shape[0])]) for layer in studyparams.LAYERS}
+    
+    if SAVEDAT:
+            pd.DataFrame({
+                    'channelStimsEachBlock': [channelStimEachBlock[block,:] for block in range(nBlocks)],
+                    'lfpEachBlock': [eventLockedLFP[block,:,:,:] for block in range(nBlocks)],
+                    'baselineEachBlock': [baselineEachBlock[block,:,:] for block in range(nBlocks)]
+                }, dtype=object).to_hdf(saveDatFilename[site],key='df',complevel=4)
+            
+            pd.DataFrame({
+                    'powerEachBlockEachLayer': [powerEachBlockEachLayer[block] for block in range(combinedSortedLFPs.shape[0])]
+                }, dtype=object).to_hdf(combosaveDatFilename[site],key='df',complevel=4)
+            
+    # yrangeEachBlock = []
+    # for block in range(combinedSortedLFPs.shape[0]):
+    #     ymin = np.min(np.array([*meansEachBlock.values()])[:,block,:,(timeVec>0.25 + stimParamsEachBlock['main'][block]['Train_Dur_ms']/1000)])
+    #     ymax = np.max(np.array([*meansEachBlock.values()])[:,block,:,(timeVec>0.25 + stimParamsEachBlock['main'][block]['Train_Dur_ms']/1000)])
+    #     yrangeEachBlock.append([ymin,ymax])
+    # yminEachBlock = [np.min(np.array([*meansEachBlock.values()])[:,block,:,(timeVec>stimParamsEachBlock['main'][block]['Train_Dur_ms'])]) for block in range(combinedSortedLFPs.shape[0])]
+    # ymaxEachBlock = np.min(np.array([*meansEachBlock.values()]))
     simpleKrusk = []
     for block in range(combinedSortedLFPs.shape[0]):
         simpleKrusk.append([])
         for recChan in donutChans.flatten():
             simpleKrusk[block].append(stats.kruskal(*[meansEachLayer[layer][block][:,recChan] for layer in studyparams.LAYERS]))
 
-
+    
     if MAKEFIGS and 1:
+        layerColors = plt.cm.tab10(np.linspace(0,1,5))
         compDir = os.path.join(outDir,'LayerComparisons')
         if not os.path.exists(compDir):
             os.mkdir(compDir)
         for block in range(combinedSortedLFPs.shape[0]):
-            fig,axs = make_donut_axes(figsize=(18,18))
+            fig,axs = make_donut_axes()
             for inda,ax in enumerate(axs.flatten()):
-                for layer in studyparams.LAYERS:
+                for indl,layer in enumerate(studyparams.LAYERS):
                     ax.plot(timeVec,
-                                meansEachBlock[layer][block][donutChans.flatten()[inda]],
+                                meansEachBlock[layer][block][donutChans.flatten()[inda]], color = layerColors[indl],
                                 label=layer if inda==0 else '')
             leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
             plt.setp(leg.get_lines(),linewidth=4)
@@ -340,6 +364,44 @@ if __name__ == '__main__':
             filename = f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_broadband_layer_comparison.png"
             fig.savefig(os.path.join(compDir,filename),format='png',transparent=True);
             plt.close();
+        
+        layersylab = 'Mean Evoked Resposne (uV)'
+        layersxlab = 'Stim Amplitude (uA)'
+
+        fig,axs = make_donut_axes()
+        for inda,ax in enumerate(axs.flatten()):
+            for indl,layer in enumerate(studyparams.LAYERS):
+                ax.errorbar([0,10,20,40,80], np.mean(meansEachLayer[layer][[9,5,6,7,8],:,inda],axis=1),
+                            np.std(meansEachLayer[layer][[9,5,6,7,8],:,inda],axis=1),color=layerColors[indl],label=layer if inda==0 else "")
+
+        leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
+        plt.setp(leg.get_lines(),linewidth=4)
+        fig.suptitle('Single Pulse Response vs Amplitude')
+        currStimParams = stimParamsEachBlock['main'][block]
+        fig.supylabel(layersylab,fontsize=24)
+        fig.supxlabel(layersxlab,fontsize=24)
+        fig.subplots_adjust(wspace=0.6) 
+        filename = f"Single_pulse_mean_broadband_layer_comparison.png"
+        fig.savefig(os.path.join(compDir,filename),format='png',transparent=True);
+        plt.close();
+
+        fig,axs = make_donut_axes()
+        for inda,ax in enumerate(axs.flatten()):
+            for indl,layer in enumerate(studyparams.LAYERS):
+                ax.errorbar([0,1,2,4,8], np.mean(meansEachLayer[layer][[4,0,1,2,3],:,inda],axis=1),
+                        np.std(meansEachLayer[layer][[4,0,1,2,3],:,inda],axis=1),color=layerColors[indl],label=layer if inda==0 else "")
+
+        leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
+        plt.setp(leg.get_lines(),linewidth=4)
+        fig.suptitle('Pulse Train Response vs Amplitude')
+        currStimParams = stimParamsEachBlock['main'][block]
+        fig.supylabel(layersylab,fontsize=24)
+        fig.supxlabel(layersxlab,fontsize=24)
+        fig.subplots_adjust(wspace=0.6)
+        filename = f"Pulse_Train_mean_broadband_layer_comparison.png"
+        fig.savefig(os.path.join(compDir,filename),format='png',transparent=True);
+        plt.close();
+
         
 
         # downsampleRate = sampleRate//downFactor
