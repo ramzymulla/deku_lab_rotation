@@ -18,13 +18,14 @@ BASELINE_DUR = 30                   # seconds
 TIMERANGE = [-1,2]                  # seconds
 
 SUBJECTS = ['FD005','FD006', 'OHSU2']
-DATES = {
+
+DATES = {   # date of the experiment (YYMMDD)
     'FD005' :   '260304',
     'FD006' :   '260311',
     'OHSU2' :   '260320'
 }
 
-nonStimEdata = {
+nonStimEdata = {    # timestamps of non-stim ephys data (e.g., whisker puffs)
     'FD006':{
         'lidocaine1'    :   '183148',
         'lidocaine2'    :   '184549',
@@ -36,8 +37,8 @@ nonStimEdata = {
     
 }
 
-nonStimBdata={
-    'FD006':{
+nonStimstimlog={      # time (in seconds) of when non-electrical stims were given 
+    'FD006':{               # !!! (unnecssary if TTL signals are present in the intan data) !!!
         'whisk1'        : [[31,41],[80,90]]
     },
     'OHSU2':{
@@ -46,8 +47,8 @@ nonStimBdata={
     
 }
 
-edataToUse = {
-    'FD006':{
+edataToUse = {          # timestamps of the first and last ephys folders 
+    'FD006':{               # for the corresponding stim log .csv file 
         'main'     :   ('160803','182402')   # original insertion
         # 'site2'     :   ''
     },
@@ -56,7 +57,7 @@ edataToUse = {
     }
 }
 
-bdataToUse = {
+stimlogToUse = {          # timestamps of the stim log .csv files you would like to analyze
     'FD006':{
         'main'     :   '160754',   # original insertion
         # 'site2'    
@@ -67,7 +68,7 @@ bdataToUse = {
 
 }
 
-SITE_TIP_DEPTHS = {
+SITE_TIP_DEPTHS = {     # shank tip depth for each site/set of recordings
     'FD006':{
         'main': 2100,
         'site2': 2600

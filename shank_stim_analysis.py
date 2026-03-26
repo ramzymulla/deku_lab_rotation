@@ -53,9 +53,9 @@ if not os.path.exists(mpd_graphsDir):
     os.mkdir(mpd_graphsDir)
 
 nonStimEdata = studyparams.nonStimEdata[subject]
-nonStimBdata=studyparams.nonStimBdata[subject]
+nonStimstimlog=studyparams.nonStimstimlog[subject]
 edataToUse = studyparams.edataToUse[subject]
-bdataToUse = studyparams.bdataToUse[subject]
+stimlogToUse = studyparams.stimlogToUse[subject]
 
 bandsToUse = ['Delta','Theta','Alpha','Beta','Low_Gamma','High_Gamma','HFO']
 saveDatFilename = {site:os.path.join(processedDataPath,f"{subject}_{date}_{site}_processed.hdf") for site in edataToUse}
@@ -76,18 +76,18 @@ if __name__ == '__main__':
 
     ### get data filenames ###
     edataFilenames = list(dataRoot.glob(f"**/{subject}_data/*{date}*/"))
-    bdataFilenames = {site:list(dataRoot.glob(f"**/{subject}_stim_logs/*{bdataToUse[site]}.csv")) for site in bdataToUse}
+    stimlogFilenames = {site:list(dataRoot.glob(f"**/{subject}_stim_logs/*{stimlogToUse[site]}.csv")) for site in stimlogToUse}
 
     ### get ephys times ###
     ephysTimes = [str(f).split('_')[-1] for f in edataFilenames]
     sortedEphysTimes = sorted(ephysTimes)
     sortedEphysFiles = [edataFilenames[i] for i in np.argsort(ephysTimes)]
 
-    ### load bdata ###
-    bdataAll = {}
-    for site in bdataFilenames:
-        dfs = [pd.read_csv(f) for f in sorted(bdataFilenames[site])]
-        bdataAll[site] = pd.concat([df for df in dfs if len(df) > 0])
+    ### load stimlog ###
+    stimlogAll = {}
+    for site in stimlogFilenames:
+        dfs = [pd.read_csv(f) for f in sorted(stimlogFilenames[site])]
+        stimlogAll[site] = pd.concat([df for df in dfs if len(df) > 0])
 
     ### load edata ###
     recordingsEachSite = {}
@@ -105,7 +105,7 @@ if __name__ == '__main__':
         startInd = sortedEphysTimes.index(edataToUse[site][0])
         stopInd = sortedEphysTimes.index(edataToUse[site][1])
         recordingsEachSite[site] = []
-        bdata = bdataAll[site]
+        stimlog = stimlogAll[site]
         edataFilesToUse = sortedEphysFiles[startInd:stopInd+1]
         if not (LOAD and os.path.exists(saveDatFilename[site])):
             for f in edataFilesToUse:
@@ -130,12 +130,12 @@ if __name__ == '__main__':
         else:
             channelStimEachTrial,eventLockedLFP,baselineEachBlock = get_events_and_LFPs(recordingsEachSite,
                                                                                         site,
-                                                                                        bdataAll[site],
+                                                                                        stimlogAll[site],
                                                                                         timeRange=timeRange,
                                                                                         downFactor=downFactor)
             
             channelStimEachBlock = channelStimEachTrial.reshape(eventLockedLFP.shape[:2])
-            # channelStimEachBlock = bdataAll[site]['Channel'].apply(lambda x: int(x[-2:])).reshape(eventLockedLFP.shape[:2])
+            # channelStimEachBlock = stimlogAll[site]['Channel'].apply(lambda x: int(x[-2:])).reshape(eventLockedLFP.shape[:2])
 
         print('---- done extracting events and LFP ----')
         nBlocks,nTrialsEachBlock,nChannels,nSamples = eventLockedLFP.shape
@@ -150,7 +150,7 @@ if __name__ == '__main__':
 
         ### combine stim channels to show all 16 ###
         combinedSortedLFPs = sortedLFPs.reshape(sortedLFPs.shape[0]//2,sortedLFPs.shape[1]*2,*sortedLFPs.shape[2:])
-        stimParamsEachBlock[site] = [bdataAll[site].iloc[block*combinedSortedLFPs.shape[1]] for block in range(combinedSortedLFPs.shape[0])]
+        stimParamsEachBlock[site] = [stimlogAll[site].iloc[block*combinedSortedLFPs.shape[1]] for block in range(combinedSortedLFPs.shape[0])]
         suptitleEachBlock[site] = [f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" for currStimParams in stimParamsEachBlock[site]] 
             
 
@@ -216,7 +216,7 @@ if __name__ == '__main__':
                     shankChans = studyparams.SHANK_ORDER[1::2]
                     chanDepths = studyparams.SHANK_DEPTHS[subject][site][1::2]
 
-                currStimParams = bdataAll[site].iloc[block*40]
+                currStimParams = stimlogAll[site].iloc[block*40]
                 blockDir = os.path.join(mpd_graphsDir,f"{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA")
                 if MAKEFIGS and (not os.path.exists(blockDir)):
                     os.mkdir(blockDir)
@@ -425,13 +425,13 @@ if __name__ == '__main__':
 
         #     if np.sum(stims) == 0:
 
-        #         ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the bdata timestamps ###
+        #         ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the stimlog timestamps ###
         #         indt = eventLockedLFP.shape[0]
-        #         stimTimes = bdata[indt:indt+40]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
+        #         stimTimes = stimlog[indt:indt+40]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
         #                                                                         - datetime(1900,1,1)).total_seconds()).values
 
         #         stimTimes = ((30 + stimTimes - stimTimes[0]))
-        #         stimChans = bdata[indt:indt+40]['Channel'].apply(lambda x: int(x[2:])).values
+        #         stimChans = stimlog[indt:indt+40]['Channel'].apply(lambda x: int(x[2:])).values
         #         stimOnsetInds = (downsampleRate*stimTimes).astype(int)
 
         #     else:
@@ -441,7 +441,7 @@ if __name__ == '__main__':
 
 
         #     channelStimEachTrial.extend(stimChans)
-        #     currStimDur = bdata['Train_Dur_ms'][eventLockedLFP.shape[0]]
+        #     currStimDur = stimlog['Train_Dur_ms'][eventLockedLFP.shape[0]]
 
         #     nTrials = len(stimOnsetInds)
         #     if nTrials !=40:

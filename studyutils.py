@@ -20,7 +20,7 @@ from elephant.current_source_density import icsd,estimate_csd
 def get_ttl_onsets(ttldata):
     return np.nonzero(np.diff(ttldata)==-1)[0]
 
-def get_events_and_LFPs(recordingsEachSite, site,bdata,
+def get_events_and_LFPs(recordingsEachSite, site,stimlog,
                           timeRange = studyparams.TIMERANGE, 
                           highcut = studyparams.HIGHCUT, 
                           sampleRate = studyparams.SAMPLE_RATE,
@@ -33,7 +33,7 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
     sampleRange = [1+int(t*downsampleRate) for t in timeRange]
     nSamplesToExtract = sampleRange[1]-sampleRange[0]
     nRecordingsThisSite = len(recordingsEachSite[site])
-    nTrialsEachBlock = len(bdata)//nRecordingsThisSite
+    nTrialsEachBlock = len(stimlog)//nRecordingsThisSite
 
 
     if downFactor !=1:
@@ -50,13 +50,13 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
         
         if np.sum(np.abs(stims)) == 0:
             
-            # ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the bdata timestamps ###
+            # ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the stimlog timestamps ###
             indt = indr*nTrialsEachBlock
-            stimTimes = bdata[indt:indt+nTrialsEachBlock]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
+            stimTimes = stimlog[indt:indt+nTrialsEachBlock]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
                                                                             - datetime(1900,1,1)).total_seconds()).values
             
             stimTimes = ((baselineDur + stimTimes - stimTimes[0]))
-            stimChans = bdata[indt:indt+nTrialsEachBlock]['Channel'].apply(lambda x: int(x[2:])).values
+            stimChans = stimlog[indt:indt+nTrialsEachBlock]['Channel'].apply(lambda x: int(x[2:])).values
             stimOnsetInds = (sampleRate*stimTimes).astype(int)//downFactor
 
             # dc = recording['dc'].get_traces()
@@ -83,7 +83,7 @@ def get_events_and_LFPs(recordingsEachSite, site,bdata,
         
 
         nTrials = len(stimOnsetInds)
-        currStimDur = bdata['Train_Dur_ms'][indr*nTrialsEachBlock]
+        currStimDur = stimlog['Train_Dur_ms'][indr*nTrialsEachBlock]
 
         if nTrials !=40:
             print(f"Error, {nTrials} stims detected for recording #{indr} ({recording['amp'].name})")
