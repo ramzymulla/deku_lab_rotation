@@ -62,16 +62,14 @@ saveDatFilename = {site:os.path.join(processedDataPath,f"{subject}_{date}_{site}
 combosaveDatFilename = {site:os.path.join(processedDataPath,f"combined_blocks_{subject}_{date}_{site}_processed.hdf") for site in edataToUse}
 
 if __name__ == '__main__':
-
-    nChannels = 32
-    sampleRate = 30000
-    downsampleRate = 1000
-    ISI = 2
+    sampleRate = studyparams.SAMPLE_RATE
+    downsampleRate = studyparams.DOWNSAMPLE_RATE
+    ISI = studyparams.ISI
     downFactor = sampleRate//downsampleRate
-    highcut = 300
-    nStimChansEachBlock = 8
+    highcut = studyparams.HIGHCUT
+    nStimChansEachBlock = studyparams.N_STIM_CHANS_EACH_BLOCK
 
-    timeRange = [-1,2]
+    timeRange = studyparams.TIMERANGE
     sampleRange = [int(t*downsampleRate)+1 for t in timeRange]
     timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
     nSamplesToExtract = sampleRange[1]-sampleRange[0]
@@ -94,12 +92,12 @@ if __name__ == '__main__':
     ### load edata ###
     recordingsEachSite = {}
     concatEdataEachSite = {}
-    streamNames = ['RHS2000 amplifier channel', 
-                'DC Amplifier channel', 
-                'Stim channel']
-    streamKeys = {'RHS2000 amplifier channel':'amp',
-                'DC Amplifier channel':'dc',
-                'Stim channel':'stim'}
+    streamNames = ['0', 
+                '10', 
+                '11']
+    streamKeys = {'0':'amp',
+                '10':'dc',
+                '11':'stim'}
     stimParamsEachBlock = {}
     suptitleEachBlock = {}
 
@@ -109,14 +107,17 @@ if __name__ == '__main__':
         recordingsEachSite[site] = []
         bdata = bdataAll[site]
         edataFilesToUse = sortedEphysFiles[startInd:stopInd+1]
-        if not LOAD:
+        if not (LOAD and os.path.exists(saveDatFilename[site])):
             for f in edataFilesToUse:
                 recordingThisFile = {}
 
                 for stream in streamNames:
-                    recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(f,stream_name=stream)
-
-                    if downFactor > 1 and 'amp' in stream:
+                    try:
+                        recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(f,stream_id=stream)
+                    except:
+                        stimFile = Path(str(f).replace(f"{subject}_data",f"{subject}_stimdata"))
+                        recordingThisFile[streamKeys[stream]] = se.read_split_intan_files(stimFile,stream_id=stream)
+                    if downFactor > 1 and stream=='0':
                         recordingThisFile[streamKeys[stream]] = sp.resample(sp.unsigned_to_signed(recordingThisFile[streamKeys[stream]]),downsampleRate)
 
                 recordingsEachSite[site].append(recordingThisFile)

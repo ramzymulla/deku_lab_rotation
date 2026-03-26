@@ -21,15 +21,15 @@ def get_ttl_onsets(ttldata):
     return np.nonzero(np.diff(ttldata)==-1)[0]
 
 def get_events_and_LFPs(recordingsEachSite, site,bdata,
-                          timeRange = [-0.5,1.5], 
-                          highcut = 300, 
-                          sampleRate = 30000,
-                          downFactor = 1,
-                          ISI = 2.5,
-                          nChannels = 32,
-                          baselineDur = 30):
+                          timeRange = studyparams.TIMERANGE, 
+                          highcut = studyparams.HIGHCUT, 
+                          sampleRate = studyparams.SAMPLE_RATE,
+                          ISI = studyparams.ISI,
+                          nChannels = studyparams.N_CHANNELS,
+                          baselineDur = studyparams.BASELINE_DUR):
 
-    downsampleRate = sampleRate//downFactor ################################
+    downsampleRate = studyparams.DOWNSAMPLE_RATE
+    downFactor = sampleRate//downsampleRate 
     sampleRange = [1+int(t*downsampleRate) for t in timeRange]
     nSamplesToExtract = sampleRange[1]-sampleRange[0]
     nRecordingsThisSite = len(recordingsEachSite[site])
@@ -159,7 +159,13 @@ def plot_multiband_power(ax, chanInds, power_dict, time_vector, sigma=5, withLab
         ax.set_ylim(y_min, y_max)
         ax.set_xlim(time_vector[0], time_vector[-1])
 
-def plot_radial_multiband_power(power_dict, time_vector, stimDur=0.65,baselineDict=None,sigma=20, donutChans = studyparams.DONUT_ORDER,scalebar_y=None,scalebar_x=None):
+def plot_radial_multiband_power(power_dict, 
+                                time_vector, 
+                                stimDur=0.65,
+                                baselineDict=None,
+                                sigma=20, 
+                                donutChans = studyparams.DONUT_ORDER,
+                                scalebar_y=None,scalebar_x=None):
     """
     Plots overlapping, smoothed peristimulus power for multiple LFP bands in a concentric layout.
     
@@ -303,7 +309,7 @@ def make_donut_axes(figsize = (16,16), donutChans = studyparams.DONUT_ORDER,rotF
     return fig,axes
 
 
-def calc_evoked_lfp_power(data, fs=1000.0, nperseg=None):
+def calc_evoked_lfp_power(data, fs=studyparams.DOWNSAMPLE_RATE, nperseg=None):
     """
     Computes the stimulus-evoked LFP power spectrum.
     
@@ -329,7 +335,7 @@ def calc_evoked_lfp_power(data, fs=1000.0, nperseg=None):
     
     return freqs, power
 
-def calc_evoked_lfp_time_frequency(data, freqs, fs=1000.0, wavelet='cmor0.5-1.0'):
+def calc_evoked_lfp_time_frequency(data, freqs, fs=studyparams.DOWNSAMPLE_RATE, wavelet='cmor0.5-1.0'):
     """
     Computes the stimulus-evoked LFP time-frequency representation using PyWavelets.
     
@@ -366,7 +372,12 @@ def calc_evoked_lfp_time_frequency(data, freqs, fs=1000.0, wavelet='cmor0.5-1.0'
         
     return freqs, power
 
-def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=400, fs=1000, shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
+def plot_power_spectra(data, timeVec, 
+                       stimDur=0.65,
+                       freqRange=[0, 200], 
+                       nperseg=400, 
+                       fs=studyparams.DOWNSAMPLE_RATE, 
+                       shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
     """
     Calculates and plots the baseline-normalized, stimulus-evoked LFP power spectra across recording and stimulus channels.
 
@@ -474,7 +485,12 @@ def plot_power_spectra(data, timeVec, stimDur=0.65,freqRange=[0, 200], nperseg=4
         
     return plot_freqs, dataToPlot, fig, ax
 
-def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[4, 100], nperseg=100, fs=1000, wavelet = 'cmor1.5-1.0'):
+def calc_broadband_power(data,timeVec,
+                         stimDur=0.65, 
+                         freqRange=[4, 100], 
+                         nperseg=100, 
+                         fs=studyparams.DOWNSAMPLE_RATE, 
+                         wavelet = 'cmor1.5-1.0'):
     """
     Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time.
     """
@@ -515,7 +531,13 @@ def calc_broadband_power(data,timeVec,stimDur=0.65, freqRange=[4, 100], nperseg=
 
 
 
-def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000, wavelet = 'cmor1.5-1.0',shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
+def plot_broadband_power(data, timeVec, 
+                         stimDur=0.65, 
+                         freqRange=[0, 200],
+                         nperseg=100, 
+                         fs=studyparams.DOWNSAMPLE_RATE, 
+                         wavelet = 'cmor1.5-1.0',
+                         shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
     """
     Calculates and plots the baseline-normalized, stimulus-evoked LFP broadband power over time.
     """
@@ -600,7 +622,10 @@ def plot_broadband_power(data, timeVec, stimDur=0.65, freqRange=[0, 200], nperse
     return timeVec, dataToPlot, fig, axs
     
 
-def extract_lfp_bands(lfp_data, fs, bands=studyparams.LFP_BANDS, filter_order=4):
+def extract_lfp_bands(lfp_data, 
+                      fs=studyparams.DOWNSAMPLE_RATE, 
+                      bands=studyparams.LFP_BANDS, 
+                      filter_order=4):
     """
     Filters LFP data into specified frequency bands.
     
@@ -689,7 +714,7 @@ def plot_radial_peristimulus_power(power_data, time_vector):
     # plt.show()
 
 
-def compute_1d_csd(data, spacing,diam=500):
+def compute_1d_csd(data, spacing=100,diam=40):
     '''
     compute 1d csd from spontaneous activity
 
@@ -707,7 +732,7 @@ def compute_1d_csd(data, spacing,diam=500):
 
     return csd
 
-def plot_icsd(lfp_data,spacing,diam=500):
+def plot_icsd(lfp_data,spacing=100,diam=40):
 
     csd_obj = compute_1d_csd(lfp_data,spacing,diam)
     lfp_data = lfp_data*1e-6*pq.V
@@ -773,7 +798,12 @@ def estimate_layers(data,spacing=100,diam=40):
 
     return layersEachChan,csd_obj,csdEachChan
 
-def calc_broadband_power_each_layer(data,timeVec,layersEachChan,stimDur=0.65, freqRange=[0, 200], nperseg=100, fs=1000):
+def calc_broadband_power_each_layer(data,timeVec,
+                                    layersEachChan,
+                                    stimDur=0.65, 
+                                    freqRange=[0, 200], 
+                                    nperseg=100, 
+                                    fs=studyparams.DOWNSAMPLE_RATE):
     """
     Calculates the baseline-normalized, stimulus-evoked LFP broadband power over time.
     """

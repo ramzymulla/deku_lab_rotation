@@ -3,6 +3,19 @@ import numpy as np
 
 STUDY_NAME = 'HybridDevice'
 
+### File paths to data and output directory ###
+DATA_PATH = os.path.join(os.path.expanduser('~'),'Research','dekulab','HybridDevice')
+OUTPUT_PATH = os.path.join(os.path.expanduser('~'),'Desktop','dekulab_analysis')
+
+### Metadata about the experiment ###
+N_CHANNELS = 32
+SAMPLE_RATE = 30000                 # Hz
+DOWNSAMPLE_RATE = 1000              # Hz
+ISI = 2                             # seconds
+HIGHCUT = 300                       # Hz
+N_STIM_CHANS_EACH_BLOCK = 8         
+BASELINE_DUR = 30                   # seconds
+TIMERANGE = [-1,2]                  # seconds
 
 SUBJECTS = ['FD005','FD006', 'OHSU2']
 DATES = {
@@ -10,8 +23,6 @@ DATES = {
     'FD006' :   '260311',
     'OHSU2' :   '260320'
 }
-DATA_PATH = os.path.join(os.path.expanduser('~'),'Research','dekulab','HybridDevice')
-OUTPUT_PATH = os.path.join(os.path.expanduser('~'),'Desktop','dekulab_analysis')
 
 nonStimEdata = {
     'FD006':{
@@ -70,6 +81,7 @@ SITE_TIP_DEPTHS = {
     
 }
 
+### Electrode configurations ###
 SHANK_ORDER = np.array([24, 0, 7, 31, 25, 1, 6, 30, 26, 2, 5, 29, 27, 3, 4, 28])
 SHANK_DEPTHS = {subject:{site:(SITE_TIP_DEPTHS[subject][site]-500) - np.arange(0,16)*100 for site in SITE_TIP_DEPTHS[subject]} for subject in SUBJECTS}# um
 SHANK_CHANS = [f"a-{site:03d}" for site in SHANK_ORDER] 
