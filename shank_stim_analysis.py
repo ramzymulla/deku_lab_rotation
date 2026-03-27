@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 
 
 
+
 LOAD = False
 SAVEDAT = False
 MAKEFIGS = False
@@ -132,8 +133,7 @@ if __name__ == '__main__':
             channelStimEachTrial,eventLockedLFP,baselineEachBlock = get_events_and_LFPs(recordingsEachSite,
                                                                                         site,
                                                                                         stimlogAll[site],
-                                                                                        timeRange=timeRange,
-                                                                                        downFactor=downFactor)
+                                                                                        timeRange=timeRange)
             
             channelStimEachBlock = channelStimEachTrial.reshape(eventLockedLFP.shape[:2])
             # channelStimEachBlock = stimlogAll[site]['Channel'].apply(lambda x: int(x[-2:])).reshape(eventLockedLFP.shape[:2])
@@ -154,8 +154,28 @@ if __name__ == '__main__':
         stimParamsEachBlock[site] = [stimlogAll[site].iloc[block*combinedSortedLFPs.shape[1]] for block in range(combinedSortedLFPs.shape[0])]
         suptitleEachBlock[site] = [f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" for currStimParams in stimParamsEachBlock[site]] 
             
+        print('---- estimating cortical layers ----')
+        if 'OHSU' in subject:
+            layerFile = edataFilenames[ephysTimes.index(nonStimEdata['whisk'])]
+            layerRec = sp.resample(sp.unsigned_to_signed(se.read_split_intan_files(layerFile,stream_id="0")),downsampleRate)
+            ttlRec = se.read_split_intan_files(layerFile,stream_id='5')   # get digital in data stream
+            ttlData = ttlRec.get_traces().T[0].astype(int)  
+            ttlOnsets = get_ttl_onsets(ttlData)//downFactor
+            layerDat = layerRec.get_traces().T[studyparams.SHANK_ORDER,:]
+            layerDat = np.array([layerDat[:,int(event+0.02*downsampleRate):int(event+0.04*downsampleRate)] for event in ttlOnsets])
+            layersEachChan,csd_obj,meanCSDs = estimate_layers(np.mean(layerDat,axis=0))
+            
 
+        else:
+            layersEachChan = np.array(['deep', 'deep', 'deep', 'deep', 'granule', 'granule', 'granule',
+                'superficial', 'superficial', 'superficial', 'superficial',
+                    'superficial', 'superficial', 'superficial', 'superficial',
+                    'superficial'], dtype='<U16')
+            
+        layersEachTrial = np.concat([[i]*5 for i in layersEachChan])
         if MAKEFIGS and 1:
+            pwrDataEachBlock = []
+            specDataEachBlock = []
             print("---- plotting spectral power densities ----")
             SPDdir = os.path.join(outDir,'SpectralPowerDonut')
             BPdir = os.path.join(outDir,'BroadbandPowerDonut')
@@ -168,7 +188,8 @@ if __name__ == '__main__':
                 currStimParams = stimParamsEachBlock[site][block]
                 stimDur = currStimParams['Train_Dur_ms']/1000
 
-                freqs,dataToPlot,fig,ax = plot_power_spectra(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[0,200],nperseg=400)
+                freqs,specData,fig,ax = plot_power_spectra(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[0,201],nperseg=400)
+                specDataEachBlock.append(specData)
                 suptitleStr =  suptitleEachBlock[site][block]
                 fig.suptitle(suptitleStr,fontsize=24, fontweight='bold');
                 filename = f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_spectral_power.png"
@@ -177,7 +198,9 @@ if __name__ == '__main__':
         
 
 
-                freqs,dataToPlot,fig,ax = plot_broadband_power(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[1.5,100])
+                # freqs,dataToPlot,fig,ax = plot_broadband_power(combinedSortedLFPs[block],timeVec,stimDur,freqRange=[1.5,100])
+                freqs,pwrData,fig,ax = plot_stacked_tfr_power(combinedSortedLFPs[block],layersEachTrial,timeVec,stimDur,freqRange=[0,201])
+                pwrDataEachBlock.append(pwrData)
                 suptitleStr = f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" 
                 fig.suptitle(suptitleStr,fontsize=24, fontweight='bold');
                 filename = f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_broadband_power.png"
@@ -186,7 +209,7 @@ if __name__ == '__main__':
 
 
         
-        if MAKEFIGS and 1:
+        if MAKEFIGS and 0:
             print('---- separating into LFP bands ----')
             ### extract LFP bands ###
             bandedBaselines = [extract_lfp_bands(baselineEachBlock[block,:,:],downsampleRate) for block in range(nBlocks)]
@@ -252,27 +275,6 @@ if __name__ == '__main__':
                 if block%10 ==0:
                     print(f"plotting block {block}/{nBlocks}")
 
-       
-    
-    
-    print('---- estimating cortical layers ----')
-    if 'OHSU' in subject:
-        layerFile = edataFilenames[ephysTimes.index(nonStimEdata['whisk'])]
-        layerRec = sp.resample(sp.unsigned_to_signed(se.read_split_intan_files(layerFile,stream_id="0")),downsampleRate)
-        ttlRec = se.read_split_intan_files(layerFile,stream_id='5')   # get digital in data stream
-        ttlData = ttlRec.get_traces().T[0].astype(int)  
-        ttlOnsets = get_ttl_onsets(ttlData)//downFactor
-        layerDat = layerRec.get_traces().T[studyparams.SHANK_ORDER,:]
-        layerDat = np.array([layerDat[:,int(event+0.02*downsampleRate):int(event+0.04*downsampleRate)] for event in ttlOnsets])
-        layersEachChan,csd_obj,meanCSDs = estimate_layers(np.mean(layerDat,axis=0))
-
-    else:
-        layersEachChan = np.array(['deep', 'deep', 'deep', 'deep', 'granule', 'granule', 'granule',
-            'superficial', 'superficial', 'superficial', 'superficial',
-                'superficial', 'superficial', 'superficial', 'superficial',
-                'superficial'], dtype='<U16')
-
-
     print('---- comparing layers ----')
     powerEachBlockEachLayer = {}
     timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
@@ -290,13 +292,12 @@ if __name__ == '__main__':
                 combinedSortedLFPs[block,(layersEachChan==layer),:,:], 
                 timeVec,
                 stimDur,
-                [1.5,100],
-                100,
-                downsampleRate,
-                'cmor1.5-1.0'
+                [1.5,200],
+                200,
+                downsampleRate
             ))
 
-    if not LOAD or 0:
+    if not LOAD or 1:
         # Configure parallel processing
         n_workers = -2  # Use all but one core
         # n_workers = -1  # Use all cores
@@ -346,7 +347,7 @@ if __name__ == '__main__':
         for recChan in donutChans.flatten():
             simpleKrusk[block].append(stats.kruskal(*[meansEachLayer[layer][block][:,recChan] for layer in studyparams.LAYERS]))
 
-    
+    ### plot layer comparisons ###
     if MAKEFIGS and 1:
         layerColors = plt.cm.tab10(np.linspace(0,1,5))
         compDir = os.path.join(outDir,'LayerComparisons')
@@ -354,11 +355,13 @@ if __name__ == '__main__':
             os.mkdir(compDir)
         for block in range(combinedSortedLFPs.shape[0]):
             fig,axs = make_donut_axes()
+            ymin = np.mean([meansEachBlock[layer][block][donutChans.flatten()]])
             for inda,ax in enumerate(axs.flatten()):
                 for indl,layer in enumerate(studyparams.LAYERS):
                     ax.plot(timeVec,
                                 meansEachBlock[layer][block][donutChans.flatten()[inda]], color = layerColors[indl],
                                 label=layer if inda==0 else '')
+                    
             leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
             plt.setp(leg.get_lines(),linewidth=4)
             fig.suptitle(suptitleEachBlock['main'][block])
@@ -367,14 +370,17 @@ if __name__ == '__main__':
             fig.savefig(os.path.join(compDir,filename),format='png',transparent=True);
             plt.close();
         
-        layersylab = 'Mean Evoked Resposne (uV)'
+        layersylab = 'Norm Power (dB)'
         layersxlab = 'Stim Amplitude (uA)'
 
         fig,axs = make_donut_axes()
         for inda,ax in enumerate(axs.flatten()):
             for indl,layer in enumerate(studyparams.LAYERS):
-                ax.errorbar([0,10,20,40,80], np.mean(meansEachLayer[layer][[9,5,6,7,8],:,inda],axis=1),
-                            np.std(meansEachLayer[layer][[9,5,6,7,8],:,inda],axis=1),color=layerColors[indl],label=layer if inda==0 else "")
+                ax.plot([0,10,20,40,80], np.mean(meansEachLayer[layer][[9,5,6,7,8],:,inda],axis=1),
+                        color=layerColors[indl],label=layer if inda==0 else "")
+                ax.plot([0,10,20,40,80], np.mean(meansEachLayer[layer][[9,5,6,7,8],:,inda],axis=1), '.',
+                        color=layerColors[indl])
+                ax.set_ylim([-10,10])
 
         leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
         plt.setp(leg.get_lines(),linewidth=4)
@@ -390,8 +396,11 @@ if __name__ == '__main__':
         fig,axs = make_donut_axes()
         for inda,ax in enumerate(axs.flatten()):
             for indl,layer in enumerate(studyparams.LAYERS):
-                ax.errorbar([0,1,2,4,8], np.mean(meansEachLayer[layer][[4,0,1,2,3],:,inda],axis=1),
-                        np.std(meansEachLayer[layer][[4,0,1,2,3],:,inda],axis=1),color=layerColors[indl],label=layer if inda==0 else "")
+                ax.plot([0,1,2,4,8], np.mean(meansEachLayer[layer][[4,0,1,2,3],:,inda],axis=1),
+                        color=layerColors[indl],label=layer if inda==0 else "")
+                ax.plot([0,1,2,4,8], np.mean(meansEachLayer[layer][[4,0,1,2,3],:,inda],axis=1),'.',
+                        color=layerColors[indl])
+                ax.set_ylim([-10,10])
 
         leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
         plt.setp(leg.get_lines(),linewidth=4)
@@ -403,104 +412,6 @@ if __name__ == '__main__':
         filename = f"Pulse_Train_mean_broadband_layer_comparison.png"
         fig.savefig(os.path.join(compDir,filename),format='png',transparent=True);
         plt.close();
-
-        
-
-        # downsampleRate = sampleRate//downFactor
-        # sampleRange = [1+int(t*downsampleRate) for t in timeRange]
-        # nSamplesToExtract = sampleRange[1]-sampleRange[0]
-
-        # bCoeff, aCoeff = signal.iirfilter(4, Wn=highcut, fs=downsampleRate, btype="low", ftype="butter")
-
-        # eventLockedLFP = np.empty((0,nSamplesToExtract,nChannels),dtype=np.int16)
-        # channelStimEachTrial = []
-
-        # ### get traces ###
-        # nRecordingsThisSite = len(recordingsEachSite[site])
-
-        # print(f'---- loading events and LFP for {site} ----')
-        # for indr,recording in enumerate(recordingsEachSite[site]):
-        #     stims = recording['stim'].get_traces()
-        #     nChannels = stims.shape[1]
-        #     stims = np.argmax(np.hstack([stims**2, np.ones((stims.shape[0],1))]),axis=1) - 32
-
-        #     if np.sum(stims) == 0:
-
-        #         ### trials zero-amplitude stims don't show up in the intan traces, so get get that from the stimlog timestamps ###
-        #         indt = eventLockedLFP.shape[0]
-        #         stimTimes = stimlog[indt:indt+40]['Timestamp'].apply(lambda x: (datetime.strptime(x.split()[-1],"%H:%M:%S.%f") \
-        #                                                                         - datetime(1900,1,1)).total_seconds()).values
-
-        #         stimTimes = ((30 + stimTimes - stimTimes[0]))
-        #         stimChans = stimlog[indt:indt+40]['Channel'].apply(lambda x: int(x[2:])).values
-        #         stimOnsetInds = (downsampleRate*stimTimes).astype(int)
-
-        #     else:
-        #         stimInds = np.nonzero(stims)[0]
-        #         stimOnsetInds = np.concat([stimInds[:1],stimInds[1:][(np.diff(stimInds) > 0.5*ISI*sampleRate)]])//downFactor
-        #         stimChans = stims[stimOnsetInds]+32
-
-
-        #     channelStimEachTrial.extend(stimChans)
-        #     currStimDur = stimlog['Train_Dur_ms'][eventLockedLFP.shape[0]]
-
-        #     nTrials = len(stimOnsetInds)
-        #     if nTrials !=40:
-        #         print(f"Error, {nTrials} stims detected for recording #{indr} ({edataFilesToUse[indr].name})")
-        #         continue
-
-        #     currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)
-
-
-        #     data = sp.remove_artifacts(sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60),
-        #                                 stimOnsetInds,ms_before=25,ms_after=currStimDur).get_traces()
-
-        #     for indt, evSample in enumerate(stimOnsetInds):
-        #         if evSample + sampleRange[0] < 0:
-        #             break
-        #         currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
-
-        #     eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
-
-        #     if (indr)%10 == 0:
-        #         print(f"{indr}/{nRecordingsThisSite} recordings processed")
-        # print('done extracting events and LFP')
-        # eventLockedLFP = signal.filtfilt(bCoeff, aCoeff, eventLockedLFP, axis=0)
-
-        # eventLockedLFP = np.empty((0,nSamplesToExtract,nChannels),dtype=np.int16)
-
-        # ### get traces ###
-        # nRecordingsThisSite = len(recordingsEachSite[site])
-        # print(f'---- loading traces for {site} ----')
-        # for indr,recording in enumerate(recordingsEachSite[site]):
-        # # for indr,recording in enumerate(recordingsEachSite[site][:1]):
-        #     # data, stims = [signal.decimate(recording[stream].get_traces(),downFactor,axis=0) for stream in recording]
-        #     data, stims = [recording[stream].get_traces() for stream in recording]
-
-        #     stims = np.argmax(np.hstack([stims**2, np.ones((stims.shape[0],1))]),axis=1) - 32
-
-        #     stimInds = np.nonzero(stims)[0]
-        #     stimOnsetInds = np.concat([stimInds[:1],stimInds[1:][(np.diff(stimInds) > ISI*sampleRate)]])//downFactor
-
-
-        #     nTrials = len(stimOnsetInds)
-
-        #     currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)
-
-        #     for indt, evSample in enumerate(stimOnsetInds):
-        #         if evSample + sampleRange[0] < 0:
-        #             break
-        #         currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
-
-        #     del data
-
-        #     eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
-
-        #     if indr%(nRecordingsThisSite//19) == 0:
-        #         print(f"{(indr/nRecordingsThisSite):.0%} complete")
-
-
-        # eventLockedLFP = signal.filtfilt(bCoeff, aCoeff, eventLockedLFP, axis=0)
 
 
 if MAKEFIGS:

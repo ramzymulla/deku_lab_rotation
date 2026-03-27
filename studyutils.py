@@ -16,6 +16,7 @@ import studyparams
 import quantities as pq
 import neo
 from elephant.current_source_density import icsd,estimate_csd
+from mne.time_frequency import psd_array_multitaper,tfr_array_multitaper
 
 def get_ttl_onsets(ttldata):
     return np.nonzero(np.diff(ttldata)==-1)[0]
@@ -24,11 +25,12 @@ def get_events_and_LFPs(recordingsEachSite, site,stimlog,
                           timeRange = studyparams.TIMERANGE, 
                           highcut = studyparams.HIGHCUT, 
                           sampleRate = studyparams.SAMPLE_RATE,
+                          downsampleRate = studyparams.DOWNSAMPLE_RATE,
                           ISI = studyparams.ISI,
                           nChannels = studyparams.N_CHANNELS,
                           baselineDur = studyparams.BASELINE_DUR):
 
-    downsampleRate = studyparams.DOWNSAMPLE_RATE
+    
     downFactor = sampleRate//downsampleRate 
     sampleRange = [1+int(t*downsampleRate) for t in timeRange]
     nSamplesToExtract = sampleRange[1]-sampleRange[0]
@@ -308,33 +310,6 @@ def make_donut_axes(figsize = (16,16), donutChans = studyparams.DONUT_ORDER,rotF
             
     return fig,axes
 
-
-def calc_evoked_lfp_power(data, fs=studyparams.DOWNSAMPLE_RATE, nperseg=None):
-    """
-    Computes the stimulus-evoked LFP power spectrum.
-    
-    Parameters:
-    data : ndarray
-        Electrophysiology data with shape (nTrials, nChannels, nSamples).
-    fs : float
-        Sampling frequency in Hz.
-    nperseg : int, optional
-        Length of each segment for Welch's method. Determines frequency resolution.
-        
-    Returns:
-    freqs : ndarray
-        Array of frequencies.
-    power : ndarray
-        Evoked power spectral density, shape (nChannels, nFreqs).
-    """
-    # 1. Average across trials to isolate the phase-locked evoked response
-    evoked_response = np.mean(data, axis=0) 
-    
-    # 2. Compute the power spectral density of the average using Welch's method
-    freqs, power = signal.welch(evoked_response, fs=fs, axis=-1, nperseg=nperseg)
-    
-    return freqs, power
-
 def calc_evoked_lfp_time_frequency(data, freqs, fs=studyparams.DOWNSAMPLE_RATE, wavelet='cmor0.5-1.0'):
     """
     Computes the stimulus-evoked LFP time-frequency representation using PyWavelets.
@@ -372,36 +347,189 @@ def calc_evoked_lfp_time_frequency(data, freqs, fs=studyparams.DOWNSAMPLE_RATE, 
         
     return freqs, power
 
+# def calc_evoked_lfp_power(data, fs=studyparams.DOWNSAMPLE_RATE, nperseg=None):
+#     """
+#     Computes the stimulus-evoked LFP power spectrum.
+    
+#     Parameters:
+#     data : ndarray
+#         Electrophysiology data with shape (nTrials, nChannels, nSamples).
+#     fs : float
+#         Sampling frequency in Hz.
+#     nperseg : int, optional
+#         Length of each segment for Welch's method. Determines frequency resolution.
+        
+#     Returns:
+#     freqs : ndarray
+#         Array of frequencies.
+#     power : ndarray
+#         Evoked power spectral density, shape (nChannels, nFreqs).
+#     """
+#     # 1. Average across trials to isolate the phase-locked evoked response
+#     evoked_response = np.mean(data, axis=0) 
+    
+#     # 2. Compute the power spectral density of the average using Welch's method
+#     freqs, power = signal.welch(evoked_response, fs=fs, axis=-1, nperseg=nperseg)
+    
+#     return freqs, power
+
+# def plot_power_spectra(data, timeVec, 
+#                        stimDur=0.65,
+#                        freqRange=[0, 200], 
+#                        nperseg=400, 
+#                        fs=studyparams.DOWNSAMPLE_RATE, 
+#                        shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
+#     """
+#     Calculates and plots the baseline-normalized, stimulus-evoked LFP power spectra across recording and stimulus channels.
+
+#     Parameters
+#     ----------
+#     data : ndarray
+#         Electrophysiology data array of shape (nTrials, nChannels, nSamples).
+#     timeVec : ndarray
+#         1D array of time points corresponding to the samples in `data`, in seconds.
+#     freqRange : list of float, optional
+#         The lower and upper bounds of the frequencies to plot in Hz. Default is [0, 200].
+#     nperseg : int, optional
+#         Length of each segment used in Welch's method for PSD calculation. Default is 500.
+#     fs : float, optional
+#         Sampling frequency of the data in Hz. Default is 1000.
+#     shankDepths : list or ndarray, optional
+#         Depth labels for the stimulus channels, used for y-axis tick labels. 
+
+#     Returns
+#     -------
+#     plot_freqs : ndarray
+#         1D array of frequencies corresponding to the x-axis of the plotted spectra.
+#     dataToPlot : ndarray
+#         3D array of relative power spectral density values in dB, shape (nStimChans, nRecChans, nFreqs).
+#     """
+#     nTrials, _, nSamples = data.shape
+#     nStimChans = len(studyparams.SHANK_ORDER)
+#     stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
+#     recChanOrder = studyparams.DONUT_ORDER.flatten()
+#     nRecChans = len(recChanOrder)
+    
+#     dummy_freqs = np.fft.rfftfreq(nperseg, 1/fs)
+#     freq_mask = (dummy_freqs >= freqRange[0]) & (dummy_freqs <= freqRange[1])
+#     plot_freqs = dummy_freqs[freq_mask]
+#     nFreqs_plot = len(plot_freqs)
+    
+#     # Define time segment masks
+#     baseline_mask = (timeVec < 0)
+#     post_mask = (timeVec > stimDur+0.05)
+    
+#     # Initialize with NaNs to prevent unallocated memory artifacts
+#     dataToPlot = np.full((nStimChans, nRecChans, nFreqs_plot), np.nan, dtype=float)
+    
+#     for inds, stimChan in enumerate(stimChanIndOrder[::-1]):
+#         for indr, recChan in enumerate(recChanOrder):
+#             trial_slice = data[stimChan*5:stimChan*5 + 5, recChan, :]
+            
+#             # Extract baseline and post-stimulus data
+#             baseline_data = trial_slice[:, baseline_mask]
+#             post_data = trial_slice[:, post_mask]
+            
+#             # Calculate evoked power for each segment
+#             freqs, baseline_pwr = calc_evoked_lfp_power(baseline_data, nperseg=nperseg, fs=fs)
+#             freqs, post_pwr = calc_evoked_lfp_power(post_data, nperseg=nperseg, fs=fs)
+            
+#             safe_baseline = np.maximum(baseline_pwr[freq_mask], 1e-12)
+#             safe_post = np.maximum(post_pwr[freq_mask], 1e-12)
+            
+#             # Normalize to baseline (dB)
+#             dataToPlot[inds, indr, :] = 10 * np.log10(safe_post / safe_baseline)
+
+#     # Symmetrically center limits around 0
+#     # abs_max = np.nanmax(np.abs(dataToPlot))
+#     abs_max = 20
+#     vmin = -abs_max
+#     vmax = abs_max
+    
+#     fig, axs = make_donut_axes(figsize=(18,18))
+#     im = None
+    
+#     # Generate 5 evenly spaced ticks for the x-axis
+#     tick_indices = np.linspace(0, nFreqs_plot - 1, 5, dtype=int)
+#     tick_labels = np.round(plot_freqs[tick_indices]).astype(int)
+    
+#     for inda, ax in enumerate(axs.flatten()):
+#         if inda < nRecChans:
+#             im = ax.imshow(
+#                 dataToPlot[:, inda, :], 
+#                 aspect=dataToPlot.shape[2]/dataToPlot.shape[0], 
+#                 origin='lower', 
+#                 vmin=vmin, 
+#                 vmax=vmax,
+#                 cmap='RdBu_r'
+#             )
+            
+#             # if studyparams.DONUT_ORDER.flatten()[inda]==8:
+#             #     ax.set_yticks(np.arange(0, nStimChans), shankDepths)
+#             #     ax.set_xticks(tick_indices, tick_labels)
+#             #     ax.set_xlabel('Frequency (Hz)',fontsize=16)
+#             #     ax.set_ylabel(f'Stim Depth ({r"$\mu m$"} from pia)',fontsize=16)
+#             # else:
+#             #     ax.axis('off')
+
+#             ax.set_yticks(np.arange(0, nStimChans,2), shankDepths[::2],fontsize=12)
+#             ax.set_xticks(tick_indices, tick_labels,fontsize=12)
+
+#     fig.supxlabel('Frequency (Hz)',fontsize=24)
+#     fig.supylabel(f'Stim Depth ({r"$\mu m$"})',fontsize=24)
+#     fig.subplots_adjust(wspace=0.6)
+
+#     if im is not None:
+#         cb = fig.colorbar(im, ax=axs.ravel().tolist(), fraction=0.02, pad=0.02,location='right')
+#         cb.ax.tick_params(labelsize=18)
+#         cb.ax.set_ylabel('Normalized Power (dB)',fontsize=24)
+        
+#     return plot_freqs, dataToPlot, fig, ax
+
+def calc_evoked_lfp_power(data, fs=studyparams.DOWNSAMPLE_RATE, bandwidth=None, fmin=0, fmax=np.inf):
+    """
+    Computes the stimulus-evoked LFP power spectrum using multitaper estimation.
+    
+    Parameters:
+    data : ndarray
+        Electrophysiology data with shape (nTrials, nChannels, nSamples).
+    fs : float
+        Sampling frequency in Hz.
+    bandwidth : float, optional
+        The bandwidth of the multi-taper windowing function in Hz.
+    fmin, fmax : float
+        Lower and upper bounds for frequencies of interest.
+        
+    Returns:
+    freqs : ndarray
+        Array of frequencies.
+    power : ndarray
+        Evoked power spectral density, shape (nChannels, nFreqs).
+    """
+    evoked_response = np.mean(data, axis=0) 
+    
+    # MNE's multitaper function returns (psds, freqs)
+    power, freqs = psd_array_multitaper(
+        evoked_response, 
+        sfreq=fs, 
+        bandwidth=bandwidth,
+        fmin=fmin,
+        fmax=fmax,
+        adaptive=True, 
+        verbose=False
+    )
+    
+    return freqs, power
+
 def plot_power_spectra(data, timeVec, 
                        stimDur=0.65,
-                       freqRange=[0, 200], 
-                       nperseg=400, 
+                       freqRange=[0, 201], 
+                       nperseg=400,
+                       bandwidth=None, 
                        fs=studyparams.DOWNSAMPLE_RATE, 
                        shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
     """
     Calculates and plots the baseline-normalized, stimulus-evoked LFP power spectra across recording and stimulus channels.
-
-    Parameters
-    ----------
-    data : ndarray
-        Electrophysiology data array of shape (nTrials, nChannels, nSamples).
-    timeVec : ndarray
-        1D array of time points corresponding to the samples in `data`, in seconds.
-    freqRange : list of float, optional
-        The lower and upper bounds of the frequencies to plot in Hz. Default is [0, 200].
-    nperseg : int, optional
-        Length of each segment used in Welch's method for PSD calculation. Default is 500.
-    fs : float, optional
-        Sampling frequency of the data in Hz. Default is 1000.
-    shankDepths : list or ndarray, optional
-        Depth labels for the stimulus channels, used for y-axis tick labels. 
-
-    Returns
-    -------
-    plot_freqs : ndarray
-        1D array of frequencies corresponding to the x-axis of the plotted spectra.
-    dataToPlot : ndarray
-        3D array of relative power spectral density values in dB, shape (nStimChans, nRecChans, nFreqs).
     """
     nTrials, _, nSamples = data.shape
     nStimChans = len(studyparams.SHANK_ORDER)
@@ -409,37 +537,48 @@ def plot_power_spectra(data, timeVec,
     recChanOrder = studyparams.DONUT_ORDER.flatten()
     nRecChans = len(recChanOrder)
     
-    dummy_freqs = np.fft.rfftfreq(nperseg, 1/fs)
-    freq_mask = (dummy_freqs >= freqRange[0]) & (dummy_freqs <= freqRange[1])
-    plot_freqs = dummy_freqs[freq_mask]
-    nFreqs_plot = len(plot_freqs)
-    
     # Define time segment masks
     baseline_mask = (timeVec < 0)
-    post_mask = (timeVec > stimDur+0.05)
+    post_mask = (timeVec > stimDur+0.1)
     
-    # Initialize with NaNs to prevent unallocated memory artifacts
-    dataToPlot = np.full((nStimChans, nRecChans, nFreqs_plot), np.nan, dtype=float)
+    # Multitaper requires equal lengths for matching frequency bins. Truncate to the shorter segment.
+    baseline_inds = np.where(baseline_mask)[0]
+    post_inds = np.where(post_mask)[0]
+    min_len = min(len(baseline_inds), len(post_inds))
+    
+    baseline_inds = baseline_inds[:min_len] 
+    post_inds = post_inds[:min_len]          
+    
+    dataToPlot = None
+    plot_freqs = None
     
     for inds, stimChan in enumerate(stimChanIndOrder[::-1]):
         for indr, recChan in enumerate(recChanOrder):
             trial_slice = data[stimChan*5:stimChan*5 + 5, recChan, :]
             
-            # Extract baseline and post-stimulus data
-            baseline_data = trial_slice[:, baseline_mask]
-            post_data = trial_slice[:, post_mask]
+            # Extract baseline and post-stimulus data using matched lengths
+            baseline_data = trial_slice[:, baseline_inds]
+            post_data = trial_slice[:, post_inds]
             
-            # Calculate evoked power for each segment
-            freqs, baseline_pwr = calc_evoked_lfp_power(baseline_data, nperseg=nperseg, fs=fs)
-            freqs, post_pwr = calc_evoked_lfp_power(post_data, nperseg=nperseg, fs=fs)
+            # Calculate evoked power natively filtered to freqRange
+            plot_freqs, baseline_pwr = calc_evoked_lfp_power(
+                baseline_data, bandwidth=bandwidth, fs=fs, fmin=freqRange[0], fmax=freqRange[1]
+            )
+            _, post_pwr = calc_evoked_lfp_power(
+                post_data, bandwidth=bandwidth, fs=fs, fmin=freqRange[0], fmax=freqRange[1]
+            )
             
-            safe_baseline = np.maximum(baseline_pwr[freq_mask], 1e-12)
-            safe_post = np.maximum(post_pwr[freq_mask], 1e-12)
+            # Initialize array dynamically on first pass to match exact MNE frequency bin count
+            if dataToPlot is None:
+                nFreqs_plot = len(plot_freqs)
+                dataToPlot = np.full((nStimChans, nRecChans, nFreqs_plot), np.nan, dtype=float)
+            
+            safe_baseline = np.maximum(baseline_pwr, 1e-12)
+            safe_post = np.maximum(post_pwr, 1e-12)
             
             # Normalize to baseline (dB)
             dataToPlot[inds, indr, :] = 10 * np.log10(safe_post / safe_baseline)
 
-    # Symmetrically center limits around 0
     # abs_max = np.nanmax(np.abs(dataToPlot))
     abs_max = 20
     vmin = -abs_max
@@ -448,8 +587,7 @@ def plot_power_spectra(data, timeVec,
     fig, axs = make_donut_axes(figsize=(18,18))
     im = None
     
-    # Generate 5 evenly spaced ticks for the x-axis
-    tick_indices = np.linspace(0, nFreqs_plot - 1, 5, dtype=int)
+    tick_indices = np.linspace(0, len(plot_freqs) - 1, 5, dtype=int)
     tick_labels = np.round(plot_freqs[tick_indices]).astype(int)
     
     for inda, ax in enumerate(axs.flatten()):
@@ -462,26 +600,18 @@ def plot_power_spectra(data, timeVec,
                 vmax=vmax,
                 cmap='RdBu_r'
             )
-            
-            # if studyparams.DONUT_ORDER.flatten()[inda]==8:
-            #     ax.set_yticks(np.arange(0, nStimChans), shankDepths)
-            #     ax.set_xticks(tick_indices, tick_labels)
-            #     ax.set_xlabel('Frequency (Hz)',fontsize=16)
-            #     ax.set_ylabel(f'Stim Depth ({r"$\mu m$"} from pia)',fontsize=16)
-            # else:
-            #     ax.axis('off')
 
-            ax.set_yticks(np.arange(0, nStimChans,2), shankDepths[::2],fontsize=12)
-            ax.set_xticks(tick_indices, tick_labels,fontsize=12)
+            ax.set_yticks(np.arange(0, nStimChans, 2), shankDepths[::2], fontsize=12)
+            ax.set_xticks(tick_indices, tick_labels, fontsize=12)
 
-    fig.supxlabel('Frequency (Hz)',fontsize=24)
-    fig.supylabel(f'Stim Depth ({r"$\mu m$"})',fontsize=24)
+    fig.supxlabel('Frequency (Hz)', fontsize=24)
+    fig.supylabel('Stim Depth (\u03bcm)', fontsize=24)
     fig.subplots_adjust(wspace=0.6)
 
     if im is not None:
-        cb = fig.colorbar(im, ax=axs.ravel().tolist(), fraction=0.02, pad=0.02,location='right')
+        cb = fig.colorbar(im, ax=axs.ravel().tolist(), fraction=0.02, pad=0.02, location='right')
         cb.ax.tick_params(labelsize=18)
-        cb.ax.set_ylabel('Normalized Power (dB)',fontsize=24)
+        cb.ax.set_ylabel('Normalized Power (dB)', fontsize=24)
         
     return plot_freqs, dataToPlot, fig, ax
 
@@ -554,6 +684,7 @@ def plot_broadband_power(data, timeVec,
     evoked_mask = (timeVec > stimDur)
     dataToPlot = np.full((nStimChans, nRecChans, nSamples), np.nan, dtype=float)
     
+    
     for inds, stimChan in enumerate(stimChanIndOrder[::-1]):
         for indr, recChan in enumerate(recChanOrder):
             trial_slice = data[stimChan*5:stimChan*5 + 5, recChan, :]
@@ -572,7 +703,7 @@ def plot_broadband_power(data, timeVec,
             safe_baseline = np.maximum(baseline_mean, 1e-12)
             safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
             
-            dataToPlot[inds, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
+            dataToPlot[inds, indr, :] = 10 * np.log10(safe_time_pwr / baseline_mean)
 
     # abs_max = np.nanmax(np.abs(dataToPlot[:,:,(timeVec>stimDur+0.05)]))
     abs_max = 15
@@ -620,7 +751,155 @@ def plot_broadband_power(data, timeVec,
         cb.ax.set_ylabel('Normalized Power (dB)', fontsize=24)
         
     return timeVec, dataToPlot, fig, axs
+
+def calc_tfr_power(data,timeVec, 
+                           stimDur=0.65, 
+                           freqRange=[0, 201],
+                           n_freqs=20, 
+                           fs=studyparams.DOWNSAMPLE_RATE):
     
+    nTrials,nRecChans,nSamples = data.shape
+
+    freqs = np.linspace(max(1.5, freqRange[0]), freqRange[1], n_freqs)
+    n_cycles = freqs / 2.0  # Adjust for time/frequency resolution trade-off
+    baseline_mask = (timeVec < 0)
+    tfrPower = np.full((nTrials,nRecChans,nSamples),np.nan,dtype=float)
+    # Compute TFR power: output shape (n_epochs, n_channels, n_freqs, n_times)
+    power = tfr_array_multitaper(
+        data, 
+        sfreq=fs, 
+        freqs=freqs, 
+        n_cycles=n_cycles, 
+        output='power',
+        verbose=False
+    )
+    
+    # Normalize each frequency to its baseline mean
+    baseline_mean = np.mean(power[:,:,:,baseline_mask], axis=-1,keepdims=True)
+    safe_baseline = np.maximum(baseline_mean, 1e-12)
+    safe_time_pwr = np.maximum(power, 1e-12)
+    
+    norm_power = 10 * np.log10(safe_time_pwr / baseline_mean)
+        
+    # Insert into array
+    tfrPower = np.mean(norm_power,axis=2)
+
+    return tfrPower
+
+def plot_stacked_tfr_power(data, layerEachTrial,timeVec, 
+                           stimDur=0.65, 
+                           freqRange=[0, 201],
+                           n_freqs=20,
+                           fs=studyparams.DOWNSAMPLE_RATE, 
+                           shankDepths=studyparams.SHANK_DEPTHS['FD006']['main']):
+    """
+    Calculates and plots the baseline-normalized, stimulus-evoked LFP power over time 
+    using multitaper time-frequency analysis, stacking frequencies per stimulus depth.
+    """
+    nTrials, nChannels, nSamples = data.shape
+    nStimChans = len(studyparams.SHANK_ORDER)
+    stimChanIndOrder = np.stack([np.arange(nStimChans//2), np.arange(nStimChans//2, nStimChans)]).ravel('F')
+    recChanOrder = studyparams.DONUT_ORDER.flatten()
+    nRecChans = len(recChanOrder)
+    nLayers = len(np.unique(studyparams.LAYERS))
+    
+    # Define frequencies and cycles for the multitaper TFR
+    # freqs = np.linspace(max(1.5, freqRange[0]), freqRange[1], n_freqs)
+    freqs = np.array([studyparams.LFP_BANDS[band][0] for band in studyparams.LFP_BANDS])
+    n_freqs = len(freqs)
+    n_cycles = freqs / 2.0  # Adjust for time/frequency resolution trade-off
+    
+    baseline_mask = (timeVec < 0)
+    stimMask = (timeVec >0) & (timeVec < stimDur+0.05)
+    
+    # New shape: (nStimChans * n_freqs, nRecChans, nSamples) to stack frequencies
+    dataToPlot = np.full((nLayers * n_freqs, nChannels, nSamples), np.nan, dtype=float)
+    
+    for indl,layer in enumerate(studyparams.LAYERS):
+        for indr, recChan in enumerate(range(nChannels)):
+            # Extract trials and reshape for MNE: (n_epochs, n_channels, n_times)
+            trial_slice = data[(layerEachTrial == layer), recChan, :]
+            epoch_data = trial_slice[:, np.newaxis, :]
+            
+            # Compute TFR power: output shape (n_epochs, n_channels, n_freqs, n_times)
+            power = tfr_array_multitaper(
+                epoch_data, 
+                sfreq=fs, 
+                freqs=freqs, 
+                n_cycles=n_cycles, 
+                output='power',
+                verbose=False,
+                n_jobs=-2
+            )
+            
+            # Average across trials (epochs) and drop the single channel dimension
+            mean_power = np.mean(power, axis=0)[0] 
+            
+            # Normalize each frequency to its baseline mean
+            baseline_mean = np.mean(mean_power[:, baseline_mask], axis=1, keepdims=True)
+            safe_baseline = np.maximum(baseline_mean, 1e-12)
+            safe_time_pwr = np.maximum(mean_power, 1e-12)
+            
+            norm_power = 10 * np.log10(safe_time_pwr / baseline_mean)
+
+            
+            
+            # Insert into stacked array
+            start_idx = indl * n_freqs
+            end_idx = start_idx + n_freqs
+            dataToPlot[start_idx:end_idx, indr, :] = norm_power
+    dataToPlot[:,:,stimMask] = np.zeros_like(dataToPlot[:,:,stimMask])
+    # abs_max = 15
+    abs_max = np.max([np.max(np.abs(dataToPlot[:,:,(timeVec>stimDur+0.2)][:,studyparams.DONUT_ORDER.flatten(),:])),10])
+    vmin = -abs_max
+    vmax = abs_max
+    
+    fig, axs = make_donut_axes(figsize=(18,18))
+    im = None
+    
+    zero_idx = np.argmin(np.abs(timeVec - 0.0))
+    stimoff_idx = np.argmin(np.abs(timeVec - stimDur))
+    
+    target_times = np.linspace(timeVec[0], timeVec[-1], 4)
+    target_times.sort()
+    tick_indices = [np.argmin(np.abs(timeVec - t)) for t in target_times]
+    tick_labels = np.round(target_times, 2)
+    
+    # Calculate Y-ticks to be at the center of each stacked depth block
+    y_tick_positions = np.arange(n_freqs // 2, nLayers * (n_freqs+1), n_freqs)
+    
+    for inda, ax in enumerate(axs.flatten()):
+        if inda < nRecChans:
+            im = ax.imshow(
+                dataToPlot[:, studyparams.DONUT_ORDER.flatten()[inda], :], 
+                aspect=dataToPlot.shape[2]/dataToPlot.shape[0], 
+                origin='lower', 
+                vmin=vmin, 
+                vmax=vmax,
+                cmap='RdBu_r'
+            )
+
+            ax.axvline(x=zero_idx, color='red', linestyle='--', linewidth=2)
+            ax.axvline(x=stimoff_idx, color='red', linestyle='--', linewidth=2)
+            
+            # Apply centered ticks
+            ax.set_yticks(y_tick_positions, studyparams.LAYERS, fontsize=12)
+            ax.set_xticks(tick_indices, tick_labels, fontsize=12)
+            
+            # Optional: Add horizontal lines to separate the depth blocks visually
+            for boundary in range(n_freqs, nLayers * n_freqs, n_freqs):
+                ax.axhline(y=boundary - 0.5, color='black', linestyle=':', linewidth=0.5)
+
+    fig.supxlabel('Time (s)', fontsize=24)
+    fig.supylabel('Stim Layer', fontsize=24)
+    fig.subplots_adjust(wspace=0.6)
+
+    if im is not None:
+        cb = fig.colorbar(im, ax=axs.ravel().tolist(), fraction=0.02, pad=0.02, location='right')
+        cb.ax.tick_params(labelsize=18)
+        cb.ax.set_ylabel('Normalized Power (dB)', fontsize=24)
+        
+    return timeVec, dataToPlot, fig, axs
 
 def extract_lfp_bands(lfp_data, 
                       fs=studyparams.DOWNSAMPLE_RATE, 
