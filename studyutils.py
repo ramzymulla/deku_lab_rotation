@@ -21,6 +21,8 @@ from mne.time_frequency import psd_array_multitaper,tfr_array_multitaper
 def get_ttl_onsets(ttldata):
     return np.nonzero(np.diff(ttldata)==-1)[0]
 
+
+
 def get_events_and_LFPs(recordingsEachSite, site,stimlog,
                           timeRange = studyparams.TIMERANGE, 
                           highcut = studyparams.HIGHCUT, 
@@ -247,7 +249,7 @@ def plot_radial_multiband_power(power_dict,
         scale_ax.set_ylim(y_min, y_max)
         scale_ax.axis('off')
         scaleAmount = 0.5
-        
+
         if scalebar_y is None:
             scalebar_y = (y_max - y_min) * scaleAmount
 
@@ -256,18 +258,18 @@ def plot_radial_multiband_power(power_dict,
             
         x0 = time_vector[0]
         y0 = y_min
-        
+
         # Draw L-shape
         scale_ax.plot([x0, x0 + scalebar_x], [y0, y0], color=rcParams['axes.edgecolor'], lw=8) 
         scale_ax.plot([x0, x0], [y0, y0 + scalebar_y], color=rcParams['axes.edgecolor'], lw=8)
-        
+
         # Add text labels
         x_range = time_vector[-1] - time_vector[0]
         y_range = y_max - y_min
         scale_ax.text(np.round(x0 + scalebar_x / 2,2), np.round(y0 - y_range * 0.05,2), 
-                      f"{scalebar_x:.1f} s", ha='center', va='top', fontsize=18, fontweight='bold')
+                        f"{scalebar_x:.1f} s", ha='center', va='top', fontsize=18, fontweight='bold')
         scale_ax.text(np.round(x0 - x_range * 0.05,2), np.round(y0 + scalebar_y / 2,2), 
-                      f"{scalebar_y:.1f} dB", ha='right', va='center', rotation=90, fontsize=18, fontweight='bold')
+                        f"{scalebar_y:.1f} dB", ha='right', va='center', rotation=90, fontsize=18, fontweight='bold')
 
             
     leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
@@ -275,7 +277,156 @@ def plot_radial_multiband_power(power_dict,
 
     # plt.show()
     return fig
-        
+
+def add_scalebar(
+    fig,
+    xdim,
+    ydim,
+    pos = [0.85, 0.05],
+    scalebar_x=None,
+    scalebar_y=None,
+    x_label=None,
+    y_label=None,
+    scale_fraction=0.5,
+    color=None,
+    linewidth=4,
+    fontsize=6,
+    fontweight="bold",
+    label_pad_fraction=0.05,
+):
+    """
+    Add a 2-D L-shaped scalebar to a figure by creating a dedicated overlay axes.
+
+    The scalebar is drawn in its own axes that is positioned and scaled to match
+    the data axes you supply.  This means the L-shape always lives in data space
+    and never distorts when the figure is resized.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        The figure to draw into.
+    rect : sequence of float  [left, bottom, width, height]
+        Position of the *data* axes in figure-fraction coordinates.
+        The scalebar axes is placed at the same position.
+    xlim : (float, float)
+        The x data limits of the main axes — (x_min, x_max).
+    ylim : (float, float)
+        The y data limits of the main axes — (y_min, y_max).
+    scalebar_x : float, optional
+        Scalebar length along x in data units.
+        Defaults to ``scale_fraction * (x_max - x_min)``.
+    scalebar_y : float, optional
+        Scalebar length along y in data units.
+        Defaults to ``scale_fraction * (y_max - y_min)``.
+    x_label : str, optional
+        Label for the horizontal arm.
+        Defaults to ``"{scalebar_x:.3g}"``.
+    y_label : str, optional
+        Label for the vertical arm.
+        Defaults to ``"{scalebar_y:.3g}"``.
+    scale_fraction : float
+        Fraction of each axis range used for the default bar length (default 0.5).
+    color : str, optional
+        Line and text color.  Defaults to ``rcParams['axes.edgecolor']``.
+    linewidth : float
+        Line width of the L-shape in points (default 8).
+    fontsize : float
+        Label font size in points (default 18).
+    fontweight : str
+        Label font weight (default ``"bold"``).
+    label_pad_fraction : float
+        Gap between bar end and label as a fraction of each data range (default 0.05).
+
+    Returns
+    -------
+    scale_ax : matplotlib.axes.Axes
+        The invisible axes that owns the scalebar artists.
+
+    Example
+    -------
+    fig, ax = plt.subplots()
+    t = np.linspace(0, 10, 1000)
+    ax.plot(t, np.sin(2 * np.pi * t))
+    ax.set_position([0.05, 0.1, 0.75, 0.8])   # leave room on right
+
+    add_scalebar(
+        fig,
+        rect=[0.05, 0.1, 0.75, 0.8],
+        xlim=(t[0], t[-1]),
+        ylim=(-1.2, 1.2),
+        x_label="2 s",
+        y_label="0.5 a.u.",
+    )
+    plt.show()
+    """
+    x_min, x_max = 0,xdim
+    y_min, y_max = 0,ydim
+    x_range = x_max - x_min
+    y_range = y_max - y_min
+    someAx = fig.get_axes()[0]
+    ax_width = someAx.get_position().width
+    ax_height = someAx.get_position().height
+    rect = [*pos,ax_width,ax_height]
+
+    if scalebar_x is None:
+        scalebar_x = scale_fraction * x_range
+    if scalebar_y is None:
+        scalebar_y = scale_fraction * y_range
+
+    if x_label is None:
+        x_label = f"{scalebar_x:.3g}"
+    if y_label is None:
+        y_label = f"{scalebar_y:.3g}"
+
+    if color is None:
+        color = plt.rcParams["axes.edgecolor"]
+
+    # Dedicated axes at the same position as the data axes — axis off so
+    # only our artists are visible.
+    scale_ax = fig.add_axes(rect)
+    scale_ax.axis("off")
+
+    # Corner of the L (bottom-left of data space)
+    x0, y0 = x_min, y_min
+
+    # --- L-shape -------------------------------------------------------
+    # Horizontal arm
+    scale_ax.plot(
+        [x0, x0 + scalebar_x], [y0, y0],
+        color=color, linewidth=linewidth, solid_capstyle="butt",
+    )
+    # Vertical arm
+    scale_ax.plot(
+        [x0, x0], [y0, y0 + scalebar_y],
+        color=color, linewidth=linewidth, solid_capstyle="butt",
+    )
+    xrange = np.diff(someAx.get_xlim())
+    yrange = np.diff(someAx.get_ylim())
+    scale_ax.set_xlim((x_min,x_min+xrange))
+    scale_ax.set_ylim((y_min,y_min+yrange))
+
+    # --- labels --------------------------------------------------------
+    pad_x = label_pad_fraction * x_range
+    pad_y = label_pad_fraction * y_range
+
+    # Horizontal label: centred below the horizontal arm
+    scale_ax.text(
+        x0 + scalebar_x / 2,
+        y0 - pad_y,
+        x_label,
+        ha="center", va="top",
+        fontsize=fontsize, fontweight=fontweight, color=color,
+    )
+    # Vertical label: centred left of the vertical arm, rotated
+    scale_ax.text(
+        x0 - pad_x,
+        y0 + scalebar_y / 2,
+        y_label,
+        ha="right", va="center", rotation=90,
+        fontsize=fontsize, fontweight=fontweight, color=color,
+    )
+
+    return scale_ax
 
 def make_donut_axes(figsize = (16,16), donutChans = studyparams.DONUT_ORDER,rotFactor=3):
 
@@ -539,7 +690,7 @@ def plot_power_spectra(data, timeVec,
     
     # Define time segment masks
     baseline_mask = (timeVec < 0)
-    post_mask = (timeVec > stimDur+0.1)
+    post_mask = (timeVec > stimDur+0.10) & (timeVec <= stimDur+0.260)
     
     # Multitaper requires equal lengths for matching frequency bins. Truncate to the shorter segment.
     baseline_inds = np.where(baseline_mask)[0]
@@ -631,20 +782,17 @@ def calc_broadband_power(data,timeVec,
     target_freqs = np.linspace(max(1, freqRange[0]), freqRange[1], nperseg)
     scales = pywt.central_frequency(wavelet) * fs / target_freqs
     
-    baseline_mask = (timeVec < -0.1)
-    evoked_mask = (timeVec > stimDur)
+    baseline_mask = (timeVec < 0)
+    evoked_mask = (timeVec > stimDur+0.010) & (timeVec <= stimDur+0.260)
     
-    bbpwr = np.full((nTrials, nRecChans, nSamples), np.nan, dtype=float)
+    bbpwr = np.full((nTrials, nRecChans, np.sum(evoked_mask)), np.nan, dtype=float)
     
     for indt in range(nTrials):
         for indr, recChan in enumerate(range(nRecChans)):
-            evoked_response = data[indt,recChan,:]
+            full_response = data[indt,recChan,:]
             
-            coefs, _ = pywt.cwt(evoked_response, scales, wavelet, sampling_period=1/fs)
-            pwr = np.abs(coefs)**2
-
-
-            
+            coefs, _ = pywt.cwt(full_response, scales, wavelet, sampling_period=1/fs)
+            pwr = np.abs(coefs)**2            
             broadband_pwr = np.mean(pwr, axis=0)
             
             baseline_mean = np.mean(broadband_pwr[baseline_mask])
@@ -653,7 +801,7 @@ def calc_broadband_power(data,timeVec,
             # safe_baseline = np.maximum(baseline_mean, 1e-12)
             # safe_time_pwr = np.maximum(broadband_pwr, 1e-12)
             safe_baseline = baseline_mean
-            safe_time_pwr = broadband_pwr
+            safe_time_pwr = broadband_pwr[evoked_mask]
             
             bbpwr[indt, indr, :] = 10 * np.log10(safe_time_pwr / safe_baseline)
 
@@ -811,6 +959,7 @@ def plot_stacked_tfr_power(data, layerEachTrial,timeVec,
     
     baseline_mask = (timeVec < 0)
     stimMask = (timeVec >0) & (timeVec < stimDur+0.05)
+    analMask = (timeVec > stimDur + 0.010) & (timeVec < stimDur + 0.260)
     
     # New shape: (nStimChans * n_freqs, nRecChans, nSamples) to stack frequencies
     dataToPlot = np.full((nLayers * n_freqs, nChannels, nSamples), np.nan, dtype=float)
@@ -1011,7 +1160,7 @@ def compute_1d_csd(data, spacing=100,diam=40):
 
     return csd
 
-def plot_icsd(lfp_data,spacing=100,diam=40):
+def plot_icsd(lfp_data,spacing=100,diam=40,cmap='jet'):
 
     csd_obj = compute_1d_csd(lfp_data,spacing,diam)
     lfp_data = lfp_data*1e-6*pq.V
@@ -1022,7 +1171,7 @@ def plot_icsd(lfp_data,spacing=100,diam=40):
     ax = axes[0]
     cbmax = np.percentile(abs(lfp_data),99)
     im = ax.imshow(np.array(lfp_data), origin='upper', vmin=-cbmax, \
-              vmax=cbmax, cmap='RdBu_r', interpolation='nearest')
+              vmax=cbmax, cmap=cmap, interpolation='nearest')
     ax.axis(ax.axis('tight'))
     cb = plt.colorbar(im, ax=ax)
     cb.set_label('LFP (%s)' % lfp_data.dimensionality.string)
@@ -1035,7 +1184,7 @@ def plot_icsd(lfp_data,spacing=100,diam=40):
     ax = axes[1]
     cbmax = np.percentile(abs(csd),99)
     im = ax.imshow(np.array(csd), origin='upper', vmin=-cbmax, \
-          vmax=cbmax, cmap='RdBu_r', interpolation='nearest')
+          vmax=cbmax, cmap=cmap, interpolation='nearest')
     ax.axis(ax.axis('tight'))
     ax.set_title(csd_obj.name)
     cb = plt.colorbar(im, ax=ax)
@@ -1048,7 +1197,7 @@ def plot_icsd(lfp_data,spacing=100,diam=40):
     csd = csd_obj.filter_csd(csd)
     cbmax = np.percentile(abs(csd),99)
     im = ax.imshow(np.array(csd), origin='upper', vmin=-cbmax, \
-          vmax=cbmax, cmap='RdBu_r', interpolation='nearest')
+          vmax=cbmax, cmap=cmap, interpolation='nearest')
     ax.axis(ax.axis('tight'))
     ax.set_title(csd_obj.name + ', filtered')
     cb = plt.colorbar(im, ax=ax)

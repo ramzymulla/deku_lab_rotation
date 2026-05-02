@@ -153,7 +153,9 @@ if __name__ == '__main__':
         combinedSortedLFPs = sortedLFPs.reshape(sortedLFPs.shape[0]//2,sortedLFPs.shape[1]*2,*sortedLFPs.shape[2:])
         stimParamsEachBlock[site] = [stimlogAll[site].iloc[block*combinedSortedLFPs.shape[1]] for block in range(combinedSortedLFPs.shape[0])]
         suptitleEachBlock[site] = [f"Stim: {''.join(currStimParams['Waveform'].split()[-2:])}, {currStimParams['Train_Dur_ms']}ms, {currStimParams['Freq_Hz']}Hz, {currStimParams['Base_Amp_uA']:.2f}uA" for currStimParams in stimParamsEachBlock[site]] 
-            
+        
+
+
         print('---- estimating cortical layers ----')
         if 'OHSU' in subject:
             layerFile = edataFilenames[ephysTimes.index(nonStimEdata['whisk'])]
@@ -161,8 +163,11 @@ if __name__ == '__main__':
             ttlRec = se.read_split_intan_files(layerFile,stream_id='5')   # get digital in data stream
             ttlData = ttlRec.get_traces().T[0].astype(int)  
             ttlOnsets = get_ttl_onsets(ttlData)//downFactor
-            layerDat = layerRec.get_traces().T[studyparams.SHANK_ORDER,:]
+            whiskDat = layerRec.get_traces().T
+            layerDat = whiskDat[studyparams.SHANK_ORDER,:]
+            whiskDat = np.array([whiskDat[:,int(event-0.5*downsampleRate):int(event+2*downsampleRate)] for event in ttlOnsets])
             layerDat = np.array([layerDat[:,int(event+0.02*downsampleRate):int(event+0.04*downsampleRate)] for event in ttlOnsets])
+            
             layersEachChan,csd_obj,meanCSDs = estimate_layers(np.mean(layerDat,axis=0))
             
 
@@ -275,6 +280,24 @@ if __name__ == '__main__':
                 if block%10 ==0:
                     print(f"plotting block {block}/{nBlocks}")
 
+        if MAKEFIGS and 1:
+            evLFPdir = os.path.join(outDir,'eventlockedLFPs')
+            if not os.path.exists(evLFPdir):
+                os.mkdir(evLFPdir)
+            for block in range(10):
+                currStimParams = stimParamsEachBlock[site][block]
+                for stimChan in range(16):
+                    fig,axs = make_donut_axes();
+                    for inda,ax in enumerate(axs.flatten()):
+                        donChan = studyparams.DONUT_ORDER.flatten()[inda]
+                        ax.plot(timeVec,np.mean(combinedSortedLFPs[block,stimChan*5 : stimChan*5 + 5,donChan,:],axis=0));
+                        ax.set_xticks([-0.25,0,0.75]);
+                
+                    fig.suptitle(f"stim chan: {studyparams.SHANK_ORDER[stimChan]}, ");
+                    filename = f"{stimChan:02d}-{studyparams.SHANK_CHANS[stimChan]}_{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_eventLockedLFP.png"
+                    fig.savefig(os.path.join(evLFPdir,filename),format='png');
+                
+
     print('---- comparing layers ----')
     powerEachBlockEachLayer = {}
     timeVec = np.arange(sampleRange[0], sampleRange[1])/downsampleRate
@@ -297,7 +320,7 @@ if __name__ == '__main__':
                 downsampleRate
             ))
 
-    if not LOAD or 1:
+    if not LOAD or 0:
         # Configure parallel processing
         n_workers = -2  # Use all but one core
         # n_workers = -1  # Use all cores
@@ -320,7 +343,10 @@ if __name__ == '__main__':
     # meansEachLayer = {layer:np.array([np.mean(combinedSortedLFPs[block,layersEachChan==layer,:,stimParamsEachBlock['main'][block]['Train_Dur_ms']-timeRange[0]*downsampleRate:],axis=-1) \
     #                                     for block in range(combinedSortedLFPs.shape[0])]) for layer in studyparams.LAYERS}
     
-    meansEachLayer = {layer:np.array([np.mean(powerEachBlockEachLayer[block][layer][:,:,(timeVec>stimParamsEachBlock['main'][block]['Train_Dur_ms']/1000)],axis=-1) \
+    # meansEachLayer = {layer:np.array([np.mean(powerEachBlockEachLayer[block][layer][:,:,(timeVec>stimParamsEachBlock['main'][block]['Train_Dur_ms']/1000)],axis=-1) \
+    #                                     for block in range(combinedSortedLFPs.shape[0])]) for layer in studyparams.LAYERS}
+    
+    meansEachLayer = {layer:np.array([np.mean(powerEachBlockEachLayer[block][layer],axis=-1) \
                                         for block in range(combinedSortedLFPs.shape[0])]) for layer in studyparams.LAYERS}
     
     if SAVEDAT:
@@ -358,7 +384,7 @@ if __name__ == '__main__':
             ymin = np.mean([meansEachBlock[layer][block][donutChans.flatten()]])
             for inda,ax in enumerate(axs.flatten()):
                 for indl,layer in enumerate(studyparams.LAYERS):
-                    ax.plot(timeVec,
+                    ax.plot(timeVec[(timeVec>=0)&(timeVec<0.25)],
                                 meansEachBlock[layer][block][donutChans.flatten()[inda]], color = layerColors[indl],
                                 label=layer if inda==0 else '')
                     
@@ -412,6 +438,8 @@ if __name__ == '__main__':
         filename = f"Pulse_Train_mean_broadband_layer_comparison.png"
         fig.savefig(os.path.join(compDir,filename),format='png',transparent=True);
         plt.close();
+
+
 
 
 if MAKEFIGS:
