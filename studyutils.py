@@ -287,7 +287,7 @@ def add_scalebar(
     scalebar_y=None,
     x_label=None,
     y_label=None,
-    scale_fraction=0.5,
+    scale_fraction=1,
     color=None,
     linewidth=4,
     fontsize=6,
@@ -393,12 +393,12 @@ def add_scalebar(
     # Horizontal arm
     scale_ax.plot(
         [x0, x0 + scalebar_x], [y0, y0],
-        color=color, linewidth=linewidth, solid_capstyle="butt",
+        color=color, linewidth=linewidth, solid_capstyle="projecting",clip_on=False,
     )
     # Vertical arm
     scale_ax.plot(
         [x0, x0], [y0, y0 + scalebar_y],
-        color=color, linewidth=linewidth, solid_capstyle="butt",
+        color=color, linewidth=linewidth, solid_capstyle="projecting",clip_on=False,
     )
     xrange = np.diff(someAx.get_xlim())
     yrange = np.diff(someAx.get_ylim())
@@ -412,7 +412,7 @@ def add_scalebar(
     # Horizontal label: centred below the horizontal arm
     scale_ax.text(
         x0 + scalebar_x / 2,
-        y0 - pad_y,
+        y0 - pad_y - 0.05,
         x_label,
         ha="center", va="top",
         fontsize=fontsize, fontweight=fontweight, color=color,
@@ -783,7 +783,8 @@ def calc_broadband_power(data,timeVec,
     scales = pywt.central_frequency(wavelet) * fs / target_freqs
     
     baseline_mask = (timeVec < 0)
-    evoked_mask = (timeVec > stimDur+0.010) & (timeVec <= stimDur+0.260)
+    # evoked_mask = (timeVec > stimDur+0.010) & (timeVec <= stimDur+0.260)
+    evoked_mask = (timeVec > 0.01)
     
     bbpwr = np.full((nTrials, nRecChans, np.sum(evoked_mask)), np.nan, dtype=float)
     
