@@ -12,7 +12,8 @@ N_CHANNELS = 32
 SAMPLE_RATE = 30000                 # Hz
 DOWNSAMPLE_RATE = 1000              # Hz
 ISI = 2                             # seconds
-HIGHCUT = 300                       # Hz
+HIGHCUT = 200                       # Hz
+LOWCUT = 4                          # Hz
 N_STIM_CHANS_EACH_BLOCK = 8         
 BASELINE_DUR = 30                   # seconds
 TIMERANGE = [-1,2]                  # seconds
@@ -49,8 +50,9 @@ nonStimstimlog={      # time (in seconds) of when non-electrical stims were give
 
 edataToUse = {          # timestamps of the first and last ephys folders 
     'FD006':{               # for the corresponding stim log .csv file 
-        'main'     :   ('160803','182402')   # original insertion
-        # 'site2'     :   ''
+        'main'     :   ('160803','182402'),   # original insertion
+        'site2'     :   ('180851','182402'),
+        'site3'     :   ('201602','203104')
     },
     'OHSU2':{
         'main'     :   ('191608','200328')
@@ -60,7 +62,8 @@ edataToUse = {          # timestamps of the first and last ephys folders
 stimlogToUse = {          # timestamps of the stim log .csv files you would like to analyze
     'FD006':{
         'main'     :   '160754',   # original insertion
-        # 'site2'    
+        'site2'    :    '180842',
+        'site3'     :   '201553' 
     },
     'OHSU2':{
         'main'      :   '191559'

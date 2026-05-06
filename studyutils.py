@@ -89,30 +89,35 @@ def get_events_and_LFPs(recordingsEachSite, site,stimlog,
         nTrials = len(stimOnsetInds)
         currStimDur = stimlog['Train_Dur_ms'][indr*nTrialsEachBlock]
 
-        if nTrials !=40:
+        if nTrials !=nTrialsEachBlock:
             print(f"Error, {nTrials} stims detected for recording #{indr} ({recording['amp'].name})")
             continue
 
         currEVLFPs = np.empty((nTrials,nSamplesToExtract,nChannels), dtype=np.int16)
 
-        if downFactor == 1:
-            data = sp.remove_artifacts(sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60),
-                                        stimOnsetInds,ms_before=0,ms_after=currStimDur+5,mode='zeros').get_traces()
-        else:
-            data = sp.remove_artifacts(sp.notch_filter(recording['amp'],60),
-                                        stimOnsetInds,ms_before=0,ms_after=currStimDur+5,mode='zeros').get_traces()
-            
         # if downFactor == 1:
-        #     data = sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60).get_traces()
+        #     data = sp.remove_artifacts(sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60),
+        #                                 stimOnsetInds,ms_before=0,ms_after=currStimDur+5,mode='zeros').get_traces()
         # else:
-        #     data = sp.notch_filter(recording['amp'],60).get_traces()
+        #     data = sp.remove_artifacts(sp.notch_filter(recording['amp'],60),
+        #                                 stimOnsetInds,ms_before=0,ms_after=currStimDur+5,mode='zeros').get_traces()
+            
+        if downFactor == 1:
+            data = sp.notch_filter(sp.unsigned_to_signed(recording['amp']),60).get_traces()
+        else:
+            data = sp.common_reference(sp.notch_filter(recording['amp'],60),
+                                reference='global',operator='median').get_traces()
+
             
         baselineEachBlock[indr,:,:] = data[:downsampleRate*downFactor,:]
 
         for indt, evSample in enumerate(stimOnsetInds):
             if evSample + sampleRange[0] < 0:
                 break
-            currEVLFPs[indt,:,:] = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
+            thisEVLFP = data[evSample+sampleRange[0]:evSample+sampleRange[1], :]
+            if thisEVLFP.shape != currEVLFPs[indt,:,:].shape:
+                thisEVLFP = np.pad(thisEVLFP,[(0, target - current) for current, target in zip(thisEVLFP.shape, currEVLFPs[indt,:,:].shape)])
+            currEVLFPs[indt,:,:] = thisEVLFP
 
         if downFactor==1:
             # eventLockedLFP = np.vstack([eventLockedLFP,currEVLFPs])
@@ -287,7 +292,7 @@ def add_scalebar(
     scalebar_y=None,
     x_label=None,
     y_label=None,
-    scale_fraction=1,
+    scale_fraction=0.5,
     color=None,
     linewidth=4,
     fontsize=6,
@@ -393,12 +398,12 @@ def add_scalebar(
     # Horizontal arm
     scale_ax.plot(
         [x0, x0 + scalebar_x], [y0, y0],
-        color=color, linewidth=linewidth, solid_capstyle="projecting",clip_on=False,
+        color=color, linewidth=linewidth, solid_capstyle="butt",
     )
     # Vertical arm
     scale_ax.plot(
         [x0, x0], [y0, y0 + scalebar_y],
-        color=color, linewidth=linewidth, solid_capstyle="projecting",clip_on=False,
+        color=color, linewidth=linewidth, solid_capstyle="butt",
     )
     xrange = np.diff(someAx.get_xlim())
     yrange = np.diff(someAx.get_ylim())
@@ -412,7 +417,7 @@ def add_scalebar(
     # Horizontal label: centred below the horizontal arm
     scale_ax.text(
         x0 + scalebar_x / 2,
-        y0 - pad_y - 0.05,
+        y0 - pad_y,
         x_label,
         ha="center", va="top",
         fontsize=fontsize, fontweight=fontweight, color=color,
@@ -783,8 +788,7 @@ def calc_broadband_power(data,timeVec,
     scales = pywt.central_frequency(wavelet) * fs / target_freqs
     
     baseline_mask = (timeVec < 0)
-    # evoked_mask = (timeVec > stimDur+0.010) & (timeVec <= stimDur+0.260)
-    evoked_mask = (timeVec > 0.01)
+    evoked_mask = (timeVec > stimDur+0.010) & (timeVec <= stimDur+0.260)
     
     bbpwr = np.full((nTrials, nRecChans, np.sum(evoked_mask)), np.nan, dtype=float)
     
