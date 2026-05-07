@@ -51,8 +51,8 @@ nonStimstimlog={      # time (in seconds) of when non-electrical stims were give
 edataToUse = {          # timestamps of the first and last ephys folders 
     'FD006':{               # for the corresponding stim log .csv file 
         'main'     :   ('160803','182402'),   # original insertion
-        'site2'     :   ('180851','182402'),
-        'site3'     :   ('201602','203104')
+        # 'site2'     :   ('180851','182402'),
+        # 'site3'     :   ('201602','203104')
     },
     'OHSU2':{
         'main'     :   ('191608','200328')
@@ -62,8 +62,8 @@ edataToUse = {          # timestamps of the first and last ephys folders
 stimlogToUse = {          # timestamps of the stim log .csv files you would like to analyze
     'FD006':{
         'main'     :   '160754',   # original insertion
-        'site2'    :    '180842',
-        'site3'     :   '201553' 
+        # 'site2'    :    '180842',
+        # 'site3'     :   '201553' 
     },
     'OHSU2':{
         'main'      :   '191559'
@@ -93,6 +93,7 @@ SHANK_CHANS = [f"a-{site:03d}" for site in SHANK_ORDER]
 DONUT_ORDER = np.array([[20, 22, 10, 11, 19, 18, 14, 12],
                 [ 8, 23,  9, 21, 13, 17, 15, 16]])
 
+
 DONUT_CHANS = [[f"a-{site:03d}" for site in row] for row in DONUT_ORDER]
 
 LFP_BANDS = {
@@ -105,5 +106,7 @@ LFP_BANDS = {
             'HFO': (100.0, 200.0) 
         }
 
-LAYERS = ['deep','granule','superficial']
+LAYERS = ['superficial','deep',]
 
+LAYER_COLORS =  ["#DF4444",'#4C8B98']
+   

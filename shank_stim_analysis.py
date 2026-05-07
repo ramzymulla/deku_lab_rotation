@@ -39,6 +39,7 @@ for arg in sys.argv:
         rcParams['xtick.color'] = COLOR        # X-axis tick color
         rcParams['ytick.color'] = COLOR        # Y-axis tick color
         rcParams['axes.edgecolor'] = COLOR
+        plt.style.use('tableau-colorblind10')
 
 subject = sys.argv[1]
 date = studyparams.DATES[subject]
@@ -191,8 +192,8 @@ if __name__ == '__main__':
             
 
         else:
-            layersEachChan = np.array(['deep', 'deep', 'deep', 'deep', 'granule', 'granule', 'granule',
-                'superficial', 'superficial', 'superficial', 'superficial',
+            layersEachChan = np.array(['deep', 'deep', 'deep', 'deep', 'deep', 'deep', 'deep',
+                'deep', 'superficial', 'superficial', 'superficial',
                     'superficial', 'superficial', 'superficial', 'superficial',
                     'superficial'], dtype='<U16')
             
@@ -295,70 +296,125 @@ if __name__ == '__main__':
                     # fig.subplots_adjust(hspace=0.4)
                     filename = f"{chanDepths[stimChan]:04d}um_channel{shankChans[stimChan]:02d}_multiband_power_block{block}.png"
                     fig.savefig(os.path.join(blockDir,filename),format='png',transparent=True);
+                    
                     plt.close();
 
                 if block%10 ==0:
                     print(f"plotting block {block}/{nBlocks}")
 
         if MAKEFIGS and 1:
+            # layerColors = plt.cm.Dark2(np.arange(10))
+            layerColors = studyparams.LAYER_COLORS
             evLFPdir = os.path.join(outDir,'eventlockedLFPs')
             if not os.path.exists(evLFPdir):
                 os.mkdir(evLFPdir)
             b,a = signal.iirfilter(4,60,fs=downsampleRate, btype="low", ftype="butter")
+            print('refiltering')
             combinedFilteredLFPs = signal.filtfilt(b,a,combinedSortedLFPs)
-            for block in range(combinedFilteredLFPs.shape[0]):
-                currStimParams = stimParamsEachBlock[site][block]
-                for stimChan in range(16):
-                    stimChanDir = os.path.join(evLFPdir,f'{studyparams.SHANK_CHANS[stimChan]}')
-                    if not os.path.exists(stimChanDir):
-                        os.mkdir(stimChanDir)
-                    fig,axs = make_donut_axes();
-                    for inda,ax in enumerate(axs.flatten()):
-                        donChan = studyparams.DONUT_ORDER.flatten()[inda]
-                        ax.plot(timeVec,np.mean(combinedFilteredLFPs[block,stimChan*5 : stimChan*5 + 5,donChan,:],axis=0));
-                        ax.set_xticks([-0.25,0,0.75]);
+            print('done')
+            # for block in range(combinedFilteredLFPs.shape[0]):
+            #     currStimParams = stimParamsEachBlock[site][block]
+            #     for stimChan in range(16):
+            #         stimChanDir = os.path.join(evLFPdir,f'{studyparams.SHANK_CHANS[stimChan]}')
+            #         if not os.path.exists(stimChanDir):
+            #             os.mkdir(stimChanDir)
+            #         fig,axs = make_donut_axes();
+            #         for inda,ax in enumerate(axs.flatten()):
+            #             donChan = studyparams.DONUT_ORDER.flatten()[inda]
+            #             ax.plot(timeVec,np.mean(combinedFilteredLFPs[block,stimChan*5 : stimChan*5 + 5,donChan,:],axis=0));
+            #             ax.set_xticks([-0.25,0,0.75]);
                 
-                    fig.suptitle(f"stim chan: {studyparams.SHANK_ORDER[stimChan]}, ");
-                    filename = f"{stimChan:02d}-{studyparams.SHANK_CHANS[stimChan]}_{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_eventLockedLFP.png"
-                    fig.savefig(os.path.join(stimChanDir,filename),format='png');
-                    plt.close('all')
-
+            #         # fig.suptitle(f"stim chan: {studyparams.SHANK_ORDER[stimChan]}, ");
+            #         filename = f"{stimChan:02d}-{studyparams.SHANK_CHANS[stimChan]}_{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_eventLockedLFP.png"
+            #         fig.savefig(os.path.join(stimChanDir,filename),format='png');
+            #         plt.close('all')
             layerStimDir = os.path.join(evLFPdir,'combinedLayerStims')
             if not os.path.exists(layerStimDir):
                 os.mkdir(layerStimDir)
-            layerColors = plt.cm.tab10(np.linspace(0,1,5))
+
+            if 0:
+                for dir in [os.path.join(layerStimDir,i) for i in ['250ms','650ms','250ms_svgs','650ms_svgs','1ms','1ms_svgs']]:
+                    if not os.path.exists(dir):
+                        os.mkdir(dir)
+                
+                tmask = (timeVec >= -0.25) & (timeVec <= 1)
+                for block in range(combinedFilteredLFPs.shape[0]):
+                    currStimParams = stimParamsEachBlock[site][block]
+                    fig,axs = make_donut_axes();
+                    for inda,ax in enumerate(axs.flatten()):
+
+                        for indl,layer in enumerate(studyparams.LAYERS):
+                            layerMask = (layersEachTrial==layer)
+                            donChan = studyparams.DONUT_ORDER.flatten()[inda]
+
+                            dataThisLayer = combinedFilteredLFPs[block,layerMask,donChan,:]
+                            sterr = 1.96*np.std(dataThisLayer,axis=0)[tmask]/np.sqrt(sum((layerMask)))
+                            meanThisLayer = np.mean(dataThisLayer,axis=0)[tmask]
+                            ax.plot(timeVec[tmask],meanThisLayer,'-',color=layerColors[indl],clip_on=False,
+                                    lw=4, label=layer if inda==0 else '');
+                            ax.fill_between(timeVec[tmask],meanThisLayer+sterr,meanThisLayer-sterr,
+                                            color=layerColors[indl],alpha=0.4,clip_on=False)
+                            ax.set_xticks(np.arange(-0.25,1,0.25));
+                            if subject == 'OHSU2':
+                                ax.set_ylim([-500,500])
+                            
+                            else:
+                                ax.set_ylim([-1500,1500])
+                            ax.set_xlim([-0.25,1])
+                            ax.axvline(0,color='r',ls='--',lw=1)
+                            ax.set_title('')
+
+                    leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
+                    plt.setp(leg.get_lines(),linewidth=4)
+                    # fig.suptitle(f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_eventLockedLFP");
+                    filename = f"{block:02d}-layerStims_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_eventLockedLFP.png"
+                    
+                    fig.savefig(os.path.join(layerStimDir,f"{currStimParams.Train_Dur_ms}ms",filename),format='png',transparent=True,dpi=600);
+                    fig.savefig(os.path.join(layerStimDir,f"{currStimParams.Train_Dur_ms}ms"+'_svgs',filename.replace('.png','.svg')),format='svg',transparent=True,dpi=600);
+                    plt.close('all')
+
             tmask = (timeVec >= -0.25) & (timeVec <= 1)
-            for block in range(combinedFilteredLFPs.shape[0]):
-                currStimParams = stimParamsEachBlock[site][block]
-                fig,axs = make_donut_axes();
-                for inda,ax in enumerate(axs.flatten()):
+            if subject == 'FD006':
+                blockSets = [list(range(combinedFilteredLFPs.shape[0]-4))[i::4] for i in range(4)]+ [[28,29,30,31]]
+                for blockSet in blockSets:    
+                    setBlock = [blockSet[-1]]+blockSet[:-1]
+                    # fig,axs = make_donut_axes();
+                    fig, axs = plt.subplots(4,4,figsize=(8,8))
+                    plt.subplots()
+                    for indb,block in enumerate(setBlock[:-1]):
+                        currStimParams = stimParamsEachBlock[site][block]
+                        for inda,ax in enumerate(axs.flatten()):
+                            for indl,layer in enumerate(studyparams.LAYERS):
+                                layerMask = (layersEachTrial==layer)
+                                donChan = studyparams.DONUT_ORDER.flatten()[inda]
 
-                    for indl,layer in enumerate(studyparams.LAYERS):
-                        layerMask = (layersEachTrial==layer)
-                        donChan = studyparams.DONUT_ORDER.flatten()[inda]
+                                dataThisLayer = combinedFilteredLFPs[block,layerMask,donChan,:]
+                                sterr = 1.96*np.std(dataThisLayer,axis=0)[tmask]/np.sqrt(sum((layerMask)))
+                                meanThisLayer = np.mean(dataThisLayer,axis=0)[tmask]+1250*(len(blockSet)//2 - indb)
+                                ax.plot(timeVec[tmask],meanThisLayer,'-',color=layerColors[indl],clip_on=False,
+                                        lw=3, label=layer if inda+indb==0 else '');
+                                ax.fill_between(timeVec[tmask],meanThisLayer+sterr,meanThisLayer-sterr,
+                                                color=layerColors[indl],alpha=0.2,clip_on=False)
+                                ax.set_xticks(np.arange(-0.25,1,0.25));
+                                if subject == 'OHSU2':
+                                    ax.set_ylim([-500,500])
+                                
+                                else:
+                                    ax.set_ylim([-3000,3000])
+                                ax.axis('off')
+                                ax.set_xlim([-0.25,1])
+                                ax.axvline(0,-0.05,1.3,color='r',ls='--',lw=2,clip_on = False)
+                                ax.set_title('')
 
-                        dataThisLayer = combinedFilteredLFPs[block,layerMask,donChan,:]
-                        sterr = 1.96*np.std(dataThisLayer,axis=0)[tmask]/np.sqrt(sum((layerMask)))
-                        meanThisLayer = np.mean(dataThisLayer,axis=0)[tmask]
-                        ax.plot(timeVec[tmask],meanThisLayer,'-',color=layerColors[indl],clip_on=False,
-                                lw=2, label=layer if inda==0 else '');
-                        ax.fill_between(timeVec[tmask],meanThisLayer+sterr,meanThisLayer-sterr,
-                                        color=layerColors[indl],alpha=0.2,clip_on=False)
-                        ax.set_xticks(np.arange(-0.25,1,0.25));
-                        if subject == 'OHSU2':
-                            ax.set_ylim([-500,500])
-                        
-                        else:
-                            ax.set_ylim([-1500,1500])
-                        ax.set_xlim([-0.25,1])
-                        ax.axvline(0,color='r',ls='--',lw=0.5)
-
-                leg = fig.legend(loc='lower left', frameon=False, prop={'size':18,'weight':'bold'}, markerscale=4);
-                plt.setp(leg.get_lines(),linewidth=4)
-                fig.suptitle(f"{block:02d}_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_eventLockedLFP");
-                filename = f"{block:02d}-layerStims_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_{currStimParams['Base_Amp_uA']:.2f}uA_eventLockedLFP.png"
-                fig.savefig(os.path.join(layerStimDir,filename),format='png',transparent=True,dpi=600);
-                plt.close('all')
+                    leg = fig.legend(loc='lower right',frameon=False, prop={'size':18,'weight':'bold'}, markerscale=2,);
+                    plt.setp(leg.get_lines(),linewidth=4)
+                    fig.subplots_adjust(hspace=0.6,wspace=0.2,bottom=0.15)
+                    add_scalebar(fig,2.0,10000,x_label='1 sec',y_label='3 mV',linewidth=12,fontsize=18, pos = [0.05,0.05])
+                    # fig.suptitle(f"{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_eventLockedLFP");
+                    filename = f"stacked-layerStims_{''.join(currStimParams['Waveform'].split()[-2:])}_{currStimParams['Train_Dur_ms']}ms_{currStimParams['Freq_Hz']}Hz_eventLockedLFP.png"
+                    fig.savefig(os.path.join(layerStimDir,filename),format='png',transparent=True,dpi=600);
+                    fig.savefig(os.path.join(layerStimDir,"svg_"+filename.replace('.png','.svg')),format='svg',transparent=True,dpi=600);
+                    plt.close('all')
                 
 
         print('---- comparing layers ----')
@@ -420,6 +476,7 @@ if __name__ == '__main__':
                 
                 pd.DataFrame({
                         'powerEachBlockEachLayer': [powerEachBlockEachLayer[block] for block in range(combinedSortedLFPs.shape[0])]
+                        # 'combinedFilteredLFPs':     [combinedFilteredLFPs[block,:,:,:] for block in range(combinedFilteredLFPs.shape[0])]
                     }, dtype=object).to_hdf(combosaveDatFilename[site],key='df',complevel=4)
                 
         # yrangeEachBlock = []
@@ -505,5 +562,5 @@ if __name__ == '__main__':
 
 
 if MAKEFIGS:
-    use(ogbackend)
+    use('Qt5Agg')
     plt.close()

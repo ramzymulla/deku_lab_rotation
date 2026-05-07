@@ -433,7 +433,7 @@ def add_scalebar(
 
     return scale_ax
 
-def make_donut_axes(figsize = (16,16), donutChans = studyparams.DONUT_ORDER,rotFactor=3):
+def make_donut_axes(figsize = (10,10), donutChans = studyparams.DONUT_ORDER,rotFactor=3):
 
     fig = plt.figure(figsize=figsize)
     
